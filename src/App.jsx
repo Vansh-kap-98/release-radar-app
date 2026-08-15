@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import SettingsForm from "./components/SettingsForm";
 import CommitPicker from "./components/CommitPicker";
+import { suggestBump, nextVersion } from "./lib/semver";
 
 export default function App() {
   const [tab, setTab] = useState("generate");
@@ -12,12 +13,15 @@ export default function App() {
   const [defaultBranch, setDefaultBranch] = useState(null);
   const [selectedStartSha, setSelectedStartSha] = useState(null);
   const [selectedEndSha, setSelectedEndSha] = useState(null);
+  const [latestTag, setLatestTag] = useState(null);
 
   const [changes, setChanges] = useState(null);
   const [markdown, setMarkdown] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [needsConfirm, setNeedsConfirm] = useState(false);
+  const [versionBump, setVersionBump] = useState(null);
+  const [versionOverride, setVersionOverride] = useState("");
 
   // Feature 2: auto-detect the latest tag + default branch as soon as a
   // valid "owner/name" repo is entered, pre-filling the range for the
@@ -30,6 +34,7 @@ export default function App() {
         const defaults = await window.releaseRadar.getRepoDefaults({ repo });
         if (cancelled) return;
         setDefaultBranch(defaults.defaultBranch || null);
+        setLatestTag(defaults.latestTag || null);
         setFromRef((prev) => prev || defaults.latestTag || "");
         setToRef((prev) => prev || defaults.defaultBranch || "");
       } catch {
@@ -47,6 +52,7 @@ export default function App() {
     setSelectedStartSha(null);
     setSelectedEndSha(null);
     setDefaultBranch(null);
+    setLatestTag(null);
   }, [repo]);
 
   function handlePickerSelect(startSha, endSha) {
@@ -61,12 +67,19 @@ export default function App() {
     setError(null);
     setMarkdown(null);
     setChanges(null);
+    setVersionBump(null);
+    setVersionOverride("");
     try {
       const result = await window.releaseRadar.fetchChanges({ repo, fromRef, toRef });
       if (result.empty) {
         setError(`No changes found between ${fromRef} and ${toRef}.`);
       } else {
         setChanges(result.changes);
+        // Feature 4: semver suggestion — pre-filled, never auto-applied.
+        // The user can still edit the field before using it anywhere.
+        const bump = suggestBump(result.changes);
+        setVersionBump(bump);
+        setVersionOverride(nextVersion(latestTag, bump) || "");
       }
     } catch (err) {
       setError(err.message);
@@ -170,6 +183,26 @@ export default function App() {
                   </li>
                 ))}
               </ul>
+
+              {versionBump && (
+                <div style={{ marginTop: 12, padding: 12, background: "#f6f6f6", borderRadius: 4 }}>
+                  <p style={{ margin: "0 0 8px", fontSize: 13 }}>
+                    Suggested bump: <strong>{versionBump}</strong>
+                    {latestTag
+                      ? ` (from ${latestTag})`
+                      : " — no existing tag found, this would be your first release"}
+                  </p>
+                  <label style={{ fontSize: 13 }}>
+                    Next version (edit freely — nothing is applied automatically)
+                    <input
+                      value={versionOverride}
+                      onChange={(e) => setVersionOverride(e.target.value)}
+                      placeholder="e.g. v1.5.0"
+                      style={{ display: "block", width: 160, marginTop: 4 }}
+                    />
+                  </label>
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 16 }}>
                 <select value={publishTarget} onChange={(e) => setPublishTarget(e.target.value)}>
