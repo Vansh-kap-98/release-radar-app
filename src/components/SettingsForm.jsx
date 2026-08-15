@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 
 export default function SettingsForm({ onSaved }) {
   const [status, setStatus] = useState(null);
-  const [githubToken, setGithubToken] = useState("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");
+  const [githubToken, setGithubToken] = useState("");
   const [aiProvider, setAiProvider] = useState("anthropic");
-  const [aiApiKey, setAiApiKey] = useState("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");
+  const [aiApiKey, setAiApiKey] = useState("");
   const [slackWebhookUrl, setSlackWebhookUrl] = useState("");
   const [configured, setConfigured] = useState({});
 
