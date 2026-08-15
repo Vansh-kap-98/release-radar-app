@@ -228,7 +228,13 @@ export default function App() {
                       : `This will publish to ${publishTarget}.`}{" "}
                     Confirm?
                   </p>
-                  <button onClick={() => handlePublish(true)}>Confirm & publish</button>
+                  <button onClick={() => handlePublish(true)} disabled={loading}>
+                    {loading ? "Publishing..." : "Confirm & publish"}
+                  </button>
+                  {/* Errors also render near the top of the page, but that's
+                      off-screen once the notes are long — repeat it here so a
+                      failed publish is visible right where the click happened. */}
+                  {error && <p style={{ color: "crimson", marginBottom: 0 }}>{error}</p>}
                 </div>
               )}
             </div>

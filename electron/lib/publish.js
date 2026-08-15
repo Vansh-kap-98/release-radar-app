@@ -6,6 +6,12 @@ function authHeaders(githubToken) {
   };
 }
 
+// Writes need an explicit JSON content-type — fetch() otherwise labels a
+// string body as text/plain, which GitHub can reject on mutating endpoints.
+function writeHeaders(githubToken) {
+  return { ...authHeaders(githubToken), "content-type": "application/json" };
+}
+
 async function publishGithubRelease({ repo, range, markdown, githubToken }) {
   const toRef = range.split("...")[1];
   const res = await fetch(`https://api.github.com/repos/${repo}/releases`, {
@@ -65,7 +71,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
   const branchName = `release-notes/${sanitizeBranchSegment(version)}-${Date.now().toString(36)}`;
   const createRefRes = await fetch(`https://api.github.com/repos/${repo}/git/refs`, {
     method: "POST",
-    headers: authHeaders(githubToken),
+    headers: writeHeaders(githubToken),
     body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha })
   });
   if (!createRefRes.ok) {
@@ -93,7 +99,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
 
   const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/CHANGELOG.md`, {
     method: "PUT",
-    headers: authHeaders(githubToken),
+    headers: writeHeaders(githubToken),
     body: JSON.stringify({
       message: `docs: update changelog for ${range}`,
       content: Buffer.from(newContent, "utf8").toString("base64"),
@@ -106,7 +112,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
   // 6. Open the PR, using the same markdown as its description.
   const prRes = await fetch(`https://api.github.com/repos/${repo}/pulls`, {
     method: "POST",
-    headers: authHeaders(githubToken),
+    headers: writeHeaders(githubToken),
     body: JSON.stringify({
       title: `Release notes: ${version || range}`,
       head: branchName,
