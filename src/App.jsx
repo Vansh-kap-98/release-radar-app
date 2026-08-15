@@ -22,6 +22,7 @@ export default function App() {
   const [needsConfirm, setNeedsConfirm] = useState(false);
   const [versionBump, setVersionBump] = useState(null);
   const [versionOverride, setVersionOverride] = useState("");
+  const [publishedUrl, setPublishedUrl] = useState(null);
 
   // Feature 2: auto-detect the latest tag + default branch as soon as a
   // valid "owner/name" repo is entered, pre-filling the range for the
@@ -69,6 +70,7 @@ export default function App() {
     setChanges(null);
     setVersionBump(null);
     setVersionOverride("");
+    setPublishedUrl(null);
     try {
       const result = await window.releaseRadar.fetchChanges({ repo, fromRef, toRef });
       if (result.empty) {
@@ -98,7 +100,8 @@ export default function App() {
         changes,
         markdown: confirmed ? markdown : undefined,
         publishTarget,
-        confirmed
+        confirmed,
+        version: versionOverride
       });
       if (result.needsConfirm) {
         setMarkdown(result.markdown);
@@ -106,6 +109,7 @@ export default function App() {
       } else {
         setMarkdown(result.markdown);
         setNeedsConfirm(false);
+        setPublishedUrl(result.publishedUrl || null);
       }
     } catch (err) {
       setError(err.message);
@@ -209,6 +213,7 @@ export default function App() {
                   <option value="markdown-only">Markdown only</option>
                   <option value="github-release">Draft GitHub Release</option>
                   <option value="slack">Post to Slack</option>
+                  <option value="pull-request">Open as Pull Request</option>
                 </select>
                 <button onClick={() => handlePublish(false)} disabled={loading}>
                   Generate
@@ -217,11 +222,25 @@ export default function App() {
 
               {needsConfirm && (
                 <div style={{ marginTop: 12, padding: 12, border: "1px solid #ddd" }}>
-                  <p>This will publish to {publishTarget}. Confirm?</p>
+                  <p>
+                    {publishTarget === "pull-request"
+                      ? "This will create a new branch, update CHANGELOG.md, and open a Pull Request."
+                      : `This will publish to ${publishTarget}.`}{" "}
+                    Confirm?
+                  </p>
                   <button onClick={() => handlePublish(true)}>Confirm & publish</button>
                 </div>
               )}
             </div>
+          )}
+
+          {publishedUrl && (
+            <p style={{ marginTop: 16 }}>
+              Done —{" "}
+              <a href={publishedUrl} target="_blank" rel="noreferrer">
+                {publishedUrl}
+              </a>
+            </p>
           )}
 
           {markdown && (
