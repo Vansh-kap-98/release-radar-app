@@ -22,27 +22,41 @@ export default function CommitPicker({ repo, branch, selectedStart, selectedEnd,
   const [loading, setLoading] = useState(false);
   const [pickerError, setPickerError] = useState(null);
 
+  // Debounced so a half-typed repo ("owner/r", "owner/re", ...) doesn't fire
+  // a 404 per keystroke, and cancellable so a stale in-flight response can't
+  // overwrite state — or leave a phantom error — after a newer one lands.
   useEffect(() => {
     setCommits([]);
     setHasNextPage(false);
     setPickerError(null);
-    if (repo && repo.includes("/")) {
-      loadPage(1, true);
-    }
+    if (!repo || !repo.includes("/")) return;
+
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      loadPage(1, true, () => cancelled);
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo, branch]);
 
-  async function loadPage(pageToLoad, replace) {
+  async function loadPage(pageToLoad, replace, isCancelled = () => false) {
     setLoading(true);
     try {
       const result = await window.releaseRadar.listCommits({ repo, branch, page: pageToLoad });
+      if (isCancelled()) return;
       setCommits((prev) => (replace ? result.commits : [...prev, ...result.commits]));
       setHasNextPage(result.hasNextPage);
       setPage(pageToLoad);
+      onError?.(null); // clear any earlier failure now that this one worked
     } catch (err) {
+      if (isCancelled()) return;
       onError?.(err.message);
     } finally {
-      setLoading(false);
+      if (!isCancelled()) setLoading(false);
     }
   }
 

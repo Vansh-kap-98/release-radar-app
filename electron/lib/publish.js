@@ -75,6 +75,12 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
     body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha })
   });
   if (!createRefRes.ok) {
+    if (createRefRes.status === 403) {
+      throw new Error(
+        "GitHub denied branch creation (403). Your token needs the \"Contents\" permission set to Read and write — " +
+          "check it at github.com/settings/tokens."
+      );
+    }
     throw new Error(`Failed to create branch ${branchName}: ${createRefRes.status} ${await createRefRes.text()}`);
   }
 
@@ -120,7 +126,22 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
       body: markdown
     })
   });
-  if (!prRes.ok) throw new Error(`Failed to open pull request: ${prRes.status} ${await prRes.text()}`);
+  if (!prRes.ok) {
+    // The branch and commit already landed by this point, so say so — the
+    // work isn't lost, only the PR step failed.
+    const compareUrl = `https://github.com/${repo}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(branchName)}?expand=1`;
+    if (prRes.status === 403) {
+      throw new Error(
+        `Branch "${branchName}" and the CHANGELOG.md commit were created, but GitHub denied opening the pull request (403). ` +
+          "Your token needs the \"Pull requests\" permission set to Read and write (Contents alone isn't enough) — " +
+          `check it at github.com/settings/tokens. You can also open the PR manually: ${compareUrl}`
+      );
+    }
+    throw new Error(
+      `Branch "${branchName}" and the CHANGELOG.md commit were created, but opening the pull request failed: ` +
+        `${prRes.status} ${await prRes.text()}. You can open it manually: ${compareUrl}`
+    );
+  }
   const prData = await prRes.json();
   return prData.html_url;
 }
