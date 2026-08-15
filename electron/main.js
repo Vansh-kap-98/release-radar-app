@@ -3,7 +3,7 @@ const path = require("path");
 const { getSecret, setSecret, getAll } = require("./lib/store");
 const { fetchChangeRange, listCommits, getRepoDefaults } = require("./lib/github");
 const { classifyChanges, formatReleaseNotes } = require("./lib/ai");
-const { publishGithubRelease, postToSlack } = require("./lib/publish");
+const { publishGithubRelease, postToSlack, openChangelogPullRequest } = require("./lib/publish");
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -81,7 +81,7 @@ ipcMain.handle("release-radar:repo-defaults", async (_event, { repo }) => {
 
 // --- Step 2: format + optionally publish ---
 
-ipcMain.handle("release-radar:publish", async (_event, { repo, range, changes, markdown: reviewedMarkdown, publishTarget, confirmed }) => {
+ipcMain.handle("release-radar:publish", async (_event, { repo, range, changes, markdown: reviewedMarkdown, publishTarget, confirmed, version }) => {
   const aiProvider = getSecret("aiProvider") || "anthropic";
   const aiApiKey = getSecret("aiApiKey");
   if (!aiApiKey) throw new Error("Add an AI provider API key in Settings first.");
@@ -103,6 +103,7 @@ ipcMain.handle("release-radar:publish", async (_event, { repo, range, changes, m
 
   if (publishTarget === "github-release") {
     const githubToken = getSecret("githubToken");
+    if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
     const url = await publishGithubRelease({ repo, range, markdown, githubToken });
     return { markdown, published: true, publishedUrl: url };
   }
@@ -112,6 +113,13 @@ ipcMain.handle("release-radar:publish", async (_event, { repo, range, changes, m
     if (!webhookUrl) throw new Error("Add a Slack webhook URL in Settings first.");
     await postToSlack({ markdown, webhookUrl });
     return { markdown, published: true };
+  }
+
+  if (publishTarget === "pull-request") {
+    const githubToken = getSecret("githubToken");
+    if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
+    const url = await openChangelogPullRequest({ repo, range, markdown, version, githubToken });
+    return { markdown, published: true, publishedUrl: url };
   }
 
   throw new Error(`Unknown publish target: ${publishTarget}`);
