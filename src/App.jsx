@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import SettingsForm from "./components/SettingsForm";
 import CommitPicker from "./components/CommitPicker";
+import HistoryList from "./components/HistoryList";
 import { suggestBump, nextVersion } from "./lib/semver";
 
 export default function App() {
@@ -88,6 +89,30 @@ export default function App() {
     setLatestTag(null);
   }, [repo]);
 
+  // Feature 8: re-run the pipeline for a saved entry's range. force:true skips
+  // the classification cache — regenerating a cached result would be a no-op.
+  function handleRegenerate(entry) {
+    const [entryFrom, entryTo] = (entry.range || "").split("...");
+    if (!entryFrom || !entryTo) {
+      setError(`Saved entry has an unreadable range: "${entry.range}"`);
+      return;
+    }
+
+    setRepo(entry.repo);
+    setFromRef(entryFrom);
+    setToRef(entryTo);
+    setDetailed(Boolean(entry.detailed));
+    setTab("generate");
+
+    handleFetch({
+      repo: entry.repo,
+      fromRef: entryFrom,
+      toRef: entryTo,
+      detailed: Boolean(entry.detailed),
+      force: true
+    });
+  }
+
   function handlePickerSelect(startSha, endSha) {
     setSelectedStartSha(startSha);
     setSelectedEndSha(endSha);
@@ -95,7 +120,18 @@ export default function App() {
     if (endSha) setToRef(endSha);
   }
 
-  async function handleFetch() {
+  // Accepts explicit overrides so "Regenerate" can run against an entry's
+  // values immediately, without waiting for the state updates to land.
+  async function handleFetch(overrides = {}) {
+    const params = {
+      repo,
+      fromRef,
+      toRef,
+      detailed,
+      force: false,
+      ...overrides
+    };
+
     setLoading(true);
     setError(null);
     setMarkdown(null);
@@ -106,9 +142,9 @@ export default function App() {
     setFromCache(false);
     setDiffStats(null);
     try {
-      const result = await window.releaseRadar.fetchChanges({ repo, fromRef, toRef, detailed });
+      const result = await window.releaseRadar.fetchChanges(params);
       if (result.empty) {
-        setError(`No changes found between ${fromRef} and ${toRef}.`);
+        setError(`No changes found between ${params.fromRef} and ${params.toRef}.`);
       } else {
         setChanges(result.changes);
         setFromCache(Boolean(result.cached));
@@ -137,7 +173,8 @@ export default function App() {
         markdown: confirmed ? markdown : undefined,
         publishTarget,
         confirmed,
-        version: versionOverride
+        version: versionOverride,
+        detailed
       });
       if (result.needsConfirm) {
         setMarkdown(result.markdown);
@@ -162,12 +199,22 @@ export default function App() {
         <button onClick={() => setTab("generate")} disabled={tab === "generate"}>
           Generate
         </button>
+        <button onClick={() => setTab("history")} disabled={tab === "history"}>
+          History
+        </button>
         <button onClick={() => setTab("settings")} disabled={tab === "settings"}>
           Settings
         </button>
       </nav>
 
       {tab === "settings" && <SettingsForm onSaved={() => setTab("generate")} />}
+
+      {tab === "history" && (
+        <>
+          {error && <p style={{ color: "crimson" }}>{error}</p>}
+          <HistoryList onRegenerate={handleRegenerate} onError={setError} />
+        </>
+      )}
 
       {tab === "generate" && (
         <>
@@ -222,7 +269,7 @@ export default function App() {
               </span>
             </label>
 
-            <button onClick={handleFetch} disabled={loading || !fromRef || !toRef}>
+            <button onClick={() => handleFetch()} disabled={loading || !fromRef || !toRef}>
               {phaseLabel("Fetch & classify")}
             </button>
           </div>

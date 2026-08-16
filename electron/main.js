@@ -4,6 +4,7 @@ const { getSecret, setSecret, getAll } = require("./lib/store");
 const { fetchChangeRange, listCommits, getRepoDefaults } = require("./lib/github");
 const { classifyChanges, formatReleaseNotes } = require("./lib/ai");
 const { publishGithubRelease, postToSlack, openChangelogPullRequest } = require("./lib/publish");
+const { listHistory, addHistoryEntry, deleteHistoryEntry, clearHistory } = require("./lib/history");
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -62,11 +63,14 @@ function sendStatus(event, payload) {
   if (!event.sender.isDestroyed()) event.sender.send("release-radar:status", payload);
 }
 
-ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toRef, detailed = false }) => {
+ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toRef, detailed = false, force = false }) => {
   const githubToken = getSecret("githubToken");
   if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
 
   const key = cacheKey({ repo, fromRef, toRef, detailed });
+  // "Regenerate" from the History tab passes force, so it re-runs the pipeline
+  // rather than handing back the cached classification it's trying to redo.
+  if (force) classificationCache.delete(key);
   if (classificationCache.has(key)) {
     return { ...classificationCache.get(key), cached: true };
   }
@@ -114,6 +118,20 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
   }
 });
 
+// --- Feature 8: local history of generated changelogs ---
+
+ipcMain.handle("release-radar:history-list", () => listHistory());
+
+ipcMain.handle("release-radar:history-delete", (_event, { id }) => {
+  deleteHistoryEntry(id);
+  return listHistory();
+});
+
+ipcMain.handle("release-radar:history-clear", () => {
+  clearHistory();
+  return [];
+});
+
 // --- Feature 1: visual commit picker ---
 
 ipcMain.handle("release-radar:list-commits", async (_event, { repo, branch, page }) => {
@@ -132,7 +150,7 @@ ipcMain.handle("release-radar:repo-defaults", async (_event, { repo }) => {
 
 // --- Step 2: format + optionally publish ---
 
-ipcMain.handle("release-radar:publish", async (event, { repo, range, changes, markdown: reviewedMarkdown, publishTarget, confirmed, version }) => {
+ipcMain.handle("release-radar:publish", async (event, { repo, range, changes, markdown: reviewedMarkdown, publishTarget, confirmed, version, detailed = false }) => {
   const aiProvider = getSecret("aiProvider") || "anthropic";
   const aiApiKey = getSecret("aiApiKey");
   if (!aiApiKey) throw new Error("Add an AI provider API key in Settings first.");
@@ -148,6 +166,11 @@ ipcMain.handle("release-radar:publish", async (event, { repo, range, changes, ma
       onRetry: (info) => sendStatus(event, { phase: "retry", ...info })
     });
     sendStatus(event, { phase: "idle" });
+
+    // Feature 8: every generated changelog is saved locally, so closing the
+    // app no longer throws away work you already paid API calls for. Saved on
+    // generation rather than on publish — most runs never get published.
+    addHistoryEntry({ repo, range, markdown, detailed });
   }
 
   if (publishTarget === "markdown-only") {

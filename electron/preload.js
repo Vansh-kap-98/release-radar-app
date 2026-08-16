@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld("releaseRadar", {
   listCommits: (params) => ipcRenderer.invoke("release-radar:list-commits", params),
   getRepoDefaults: (params) => ipcRenderer.invoke("release-radar:repo-defaults", params),
 
+  getHistory: () => ipcRenderer.invoke("release-radar:history-list"),
+  deleteHistoryEntry: (id) => ipcRenderer.invoke("release-radar:history-delete", { id }),
+  clearHistory: () => ipcRenderer.invoke("release-radar:history-clear"),
+
   // Progress updates pushed from the main process (GitHub fetch / AI classify
   // / rate-limit retry). Returns an unsubscribe function.
   onStatus: (callback) => {
