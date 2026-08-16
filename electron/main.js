@@ -94,6 +94,19 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
     );
 
     const result = { changes, empty: false };
+
+    // Report what the diffs actually contributed, so "detailed mode" isn't a
+    // black box — and so an empty/failed diff payload is visible rather than
+    // silently producing toggle-off-quality output.
+    if (detailed && fileContext) {
+      result.diffStats = {
+        filesAnalyzed: fileContext.files.length,
+        filesOmitted: fileContext.omittedFileCount,
+        filesWithoutPatch: fileContext.files.filter((f) => !f.patch).length,
+        patchChars: fileContext.files.reduce((n, f) => n + (f.patch?.length ?? 0), 0)
+      };
+    }
+
     classificationCache.set(key, result);
     return result;
   } finally {

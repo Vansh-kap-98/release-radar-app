@@ -27,6 +27,7 @@ export default function App() {
   const [status, setStatus] = useState(null);
   const [retrySeconds, setRetrySeconds] = useState(0);
   const [fromCache, setFromCache] = useState(false);
+  const [diffStats, setDiffStats] = useState(null);
 
   // Progress phases pushed from the main process.
   useEffect(() => {
@@ -103,6 +104,7 @@ export default function App() {
     setVersionOverride("");
     setPublishedUrl(null);
     setFromCache(false);
+    setDiffStats(null);
     try {
       const result = await window.releaseRadar.fetchChanges({ repo, fromRef, toRef, detailed });
       if (result.empty) {
@@ -110,6 +112,7 @@ export default function App() {
       } else {
         setChanges(result.changes);
         setFromCache(Boolean(result.cached));
+        setDiffStats(result.diffStats || null);
         // Feature 4: semver suggestion — pre-filled, never auto-applied.
         // The user can still edit the field before using it anywhere.
         const bump = suggestBump(result.changes);
@@ -236,6 +239,18 @@ export default function App() {
                   </span>
                 )}
               </h2>
+
+              {diffStats && (
+                <p style={{ fontSize: 12, color: "#666", marginTop: -8 }}>
+                  Detailed analysis: sent {diffStats.filesAnalyzed} file
+                  {diffStats.filesAnalyzed === 1 ? "" : "s"} (
+                  {(diffStats.patchChars / 1000).toFixed(1)}k chars of diff)
+                  {diffStats.filesOmitted > 0 && `, ${diffStats.filesOmitted} omitted`}
+                  {diffStats.filesWithoutPatch > 0 &&
+                    `, ${diffStats.filesWithoutPatch} without a readable patch`}
+                  .
+                </p>
+              )}
               <ul>
                 {changes.map((c, i) => (
                   <li key={i}>
