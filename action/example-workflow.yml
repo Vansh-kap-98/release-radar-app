@@ -1,0 +1,44 @@
+# Copy this into YOUR repo at .github/workflows/release-notes.yml
+#
+# It runs whenever you push a version tag, generates a changelog for
+# everything since the previous tag, and opens a pull request with it.
+#
+# Before it works you need two repository secrets
+# (Settings -> Secrets and variables -> Actions):
+#   AI_API_KEY  - your Anthropic / OpenAI / Groq key
+# The GITHUB_TOKEN is provided automatically by Actions.
+
+name: Release notes
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+
+    # The default GITHUB_TOKEN needs these raised to open a PR.
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate changelog PR
+        id: changelog
+        uses: Vansh-kap-98/release-radar-app/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ai-provider: anthropic
+          ai-api-key: ${{ secrets.AI_API_KEY }}
+          publish-target: pull-request
+          # Set to true for richer descriptions built from file diffs.
+          # Costs far more tokens — needs a paid or higher-limit key.
+          detailed: "false"
+
+      - name: Show result
+        if: steps.changelog.outputs.skipped != 'true'
+        run: echo "Opened ${{ steps.changelog.outputs.published-url }}"

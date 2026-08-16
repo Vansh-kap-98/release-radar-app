@@ -31,7 +31,8 @@
     "productName": "Release Radar",
     "files": [
       "dist/**",
-      "electron/**"
+      "electron/**",
+      "core/**"
     ],
     "directories": {
       "output": "release"

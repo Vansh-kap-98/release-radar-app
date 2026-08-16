@@ -1,0 +1,49 @@
+name: "Release Radar Changelog"
+description: "Classify a commit range with AI and open a changelog pull request automatically."
+author: "Vansh Kapoor"
+
+branding:
+  icon: "radio"
+  color: "purple"
+
+inputs:
+  github-token:
+    description: "Token used to read commits and open the PR. Needs Contents: write and Pull requests: write."
+    required: true
+    default: ${{ github.token }}
+  ai-provider:
+    description: "anthropic | openai | groq"
+    required: false
+    default: "anthropic"
+  ai-api-key:
+    description: "API key for the chosen AI provider. Store it as a repository secret."
+    required: true
+  from-ref:
+    description: "Start of the range. Defaults to the tag before the one being released."
+    required: false
+  to-ref:
+    description: "End of the range. Defaults to the pushed tag, or the default branch."
+    required: false
+  detailed:
+    description: "Send file diffs to the AI for richer descriptions. Uses far more tokens."
+    required: false
+    default: "false"
+  publish-target:
+    description: "pull-request | github-release | markdown-only"
+    required: false
+    default: "pull-request"
+  version:
+    description: "Version label for the PR title and branch name. Defaults to the pushed tag."
+    required: false
+
+outputs:
+  markdown:
+    description: "The generated changelog markdown."
+  published-url:
+    description: "URL of the created pull request or draft release, when one was made."
+  skipped:
+    description: "true when there was nothing to do (e.g. no previous tag, or no commits in range)."
+
+runs:
+  using: "node20"
+  main: "index.js"

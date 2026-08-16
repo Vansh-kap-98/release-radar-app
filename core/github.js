@@ -222,4 +222,42 @@ async function getRepoDefaults({ repo, githubToken }) {
   return { defaultBranch: repoData.default_branch, latestTag };
 }
 
-module.exports = { fetchChangeRange, listCommits, getRepoDefaults, summarizeFiles, truncatePatch };
+// Feature 5 (GitHub Action): CI has no UI to pick refs from, so it has to
+// derive "what changed since the last release" on its own.
+async function listTags({ repo, githubToken, perPage = 100 }) {
+  assertValidRepo(repo);
+
+  const res = await fetch(`https://api.github.com/repos/${repo}/tags?per_page=${perPage}`, {
+    headers: authHeaders(githubToken)
+  });
+  if (!res.ok) throw new Error(`GitHub API error listing tags: ${res.status} ${res.statusText}`);
+
+  const data = await res.json();
+  return data.map((t) => ({ name: t.name, sha: t.commit?.sha ?? null }));
+}
+
+// Given the tag being released, find the tag immediately before it. Returns
+// null when this is the first tag — the caller decides what to do about it,
+// since there's no meaningful "previous release" to compare against.
+async function findPreviousTag({ repo, tag, githubToken }) {
+  const tags = await listTags({ repo, githubToken });
+  if (tags.length === 0) return null;
+
+  const index = tags.findIndex((t) => t.name === tag);
+  if (index === -1) {
+    // The tag isn't in the list (brand new, or beyond the first page).
+    // The newest known tag is the best available baseline.
+    return tags[0].name === tag ? null : tags[0].name;
+  }
+  return tags[index + 1]?.name ?? null;
+}
+
+module.exports = {
+  fetchChangeRange,
+  listCommits,
+  getRepoDefaults,
+  listTags,
+  findPreviousTag,
+  summarizeFiles,
+  truncatePatch
+};

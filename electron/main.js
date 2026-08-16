@@ -1,9 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const { getSecret, setSecret, getAll } = require("./lib/store");
-const { fetchChangeRange, listCommits, getRepoDefaults } = require("./lib/github");
-const { classifyChanges, formatReleaseNotes } = require("./lib/ai");
-const { publishGithubRelease, postToSlack, openChangelogPullRequest } = require("./lib/publish");
+// Pipeline logic lives in ../core (no Electron dependency) so the same code
+// can run in the desktop app and in the companion GitHub Action.
+const { fetchChangeRange, listCommits, getRepoDefaults } = require("../core/github");
+const { classifyChanges, formatReleaseNotes } = require("../core/ai");
+const { publishGithubRelease, postToSlack, openChangelogPullRequest } = require("../core/publish");
 const { listHistory, addHistoryEntry, deleteHistoryEntry, clearHistory } = require("./lib/history");
 
 const isDev = process.env.NODE_ENV === "development";

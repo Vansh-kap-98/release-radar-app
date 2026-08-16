@@ -1,0 +1,11 @@
+{
+  "name": "release-radar-core",
+  "version": "1.0.0",
+  "description": "Changelog pipeline (GitHub compare + AI classify/format + publish) with no Electron dependency.",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}

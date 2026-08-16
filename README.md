@@ -65,51 +65,88 @@ Recommended path for v1:
 ## Project structure
 ```
 release-radar-app/
+├── core/                  # pipeline logic, NO Electron dependency
+│   ├── github.js          # commit ranges, commit list, tags, diff summarizing
+│   ├── ai.js              # classify + format, retry/backoff, 3 providers
+│   ├── publish.js         # GitHub Release / Slack / changelog PR
+│   └── index.js           # barrel export
+├── action/                # companion GitHub Action (uses core/)
+│   ├── action.yml
+│   ├── index.js
+│   └── example-workflow.yml
 ├── electron/
-│   ├── main.js          # window creation + IPC handlers
-│   ├── preload.js        # safe bridge exposed to the React UI
+│   ├── main.js            # window creation + IPC handlers + session cache
+│   ├── preload.js         # safe bridge exposed to the React UI
 │   └── lib/
-│       ├── github.js     # fetches commit ranges
-│       ├── ai.js          # classification + formatting (Anthropic/OpenAI)
-│       ├── publish.js     # GitHub Release / Slack posting
-│       └── store.js       # encrypted local settings storage
+│       ├── store.js       # encrypted settings storage (safeStorage)
+│       └── history.js     # saved changelogs (plain, not encrypted)
 ├── src/
 │   ├── main.jsx
 │   ├── App.jsx
-│   └── components/SettingsForm.jsx
+│   ├── lib/semver.js
+│   └── components/        # SettingsForm, CommitPicker, HistoryList
 ├── index.html
 ├── vite.config.js
 └── package.json
 ```
 
-## Parked: diff-aware changelog generation
+`core/` is deliberately free of Electron imports so the exact same pipeline
+runs in the desktop app and on GitHub's servers in the Action.
 
-Classification currently runs on **commit messages only**. A diff-aware
-version — which feeds GitHub's actual file-level diffs to the AI so vague
-messages like "fix stuff" become specific entries — is fully built and
-tested, but **switched off**: sending diffs pushed API usage past rate
-limits. It's parked, not removed.
+## Detailed analysis (diff-aware mode)
 
-The code is in place and inert. To turn it back on:
+By default, classification uses **commit messages only** — fast and cheap.
+Tick **"Detailed analysis"** on the Generate tab to also send GitHub's
+file-level diffs, so a commit called "fix stuff" can become a description of
+what actually changed.
 
-1. `electron/lib/github.js` — in `fetchChangeRange()`, swap the returned
-   `fileContext: null` for the commented-out `summarizeFiles(data.files)`
-   line directly above it.
-2. `electron/lib/ai.js` — raise `max_tokens` from 2000 back to ~8000 in the
-   Anthropic branch. Diff-aware titles are longer, and too small a cap
-   truncates the JSON array mid-response and fails parsing.
+It's off by default because diffs add roughly 10–20k input tokens per run,
+which will exhaust a free-tier key quickly. The payload is bounded regardless:
 
-Nothing else needs editing. `classifyChanges()` already switches to the
-diff-aware prompt automatically whenever it receives a non-null
-`fileContext`, and the supporting pieces stay in the codebase either way:
+- each patch capped at 200 lines or 3000 characters, whichever hits first
+- only the 30 most-changed files, with the omitted count reported
+- a 60k-character ceiling across all patches combined
+- binary files and pure renames are described by name/status, never invented
 
-- `summarizeFiles()` / `truncatePatch()` in `github.js` — cap each patch at
-  200 lines or 3000 chars, keep the 30 most-changed files, and enforce a
-  60k-char ceiling across all patches so the payload stays bounded.
-- `CLASSIFY_SYSTEM_PROMPT_DIFF_AWARE` in `ai.js` — the diff-aware prompt,
-  kept as an unused constant.
+After a detailed run the UI reports exactly what was sent ("sent 12 files,
+34.2k chars of diff") so the token cost is never a black box.
 
-Known cost before re-enabling: diffs add roughly 10–20k tokens of input per
-run on a typical range, which is what triggered the rate limiting. Worth
-pairing with a smaller default file cap, or a per-run toggle in the UI so
-diffs are opt-in per changelog rather than always on.
+## Rate limits
+
+All AI calls retry automatically on HTTP 429: honouring `retry-after` when the
+provider sends one, otherwise backing off 1s → 2s → 4s, up to 3 retries. The
+UI shows a live countdown while waiting. After that it fails with a readable
+message naming the provider rather than a raw fetch error.
+
+Classification results are cached in memory for the session, keyed by
+`(repo, fromRef, toRef, detailedMode)`, so re-running an identical request
+costs nothing. "Regenerate" from the History tab deliberately bypasses it.
+
+## History
+
+Every generated changelog is saved locally to `release-radar-history.json`
+(separate from the encrypted settings store — changelogs aren't secrets).
+The **History** tab lists them newest-first; each entry can be viewed, copied,
+regenerated, or deleted. Capped at 200 entries.
+
+## Companion GitHub Action
+
+`action/` contains a GitHub Action that runs the same pipeline in CI, so a
+changelog PR opens automatically on tag push without anyone launching the app.
+
+Copy `action/example-workflow.yml` into a repo at
+`.github/workflows/release-notes.yml` and add an `AI_API_KEY` repository
+secret. On a `v*` tag push it finds the previous tag, classifies everything in
+between, and opens a changelog PR.
+
+The Action has **no npm dependencies** and needs no build step — it talks to
+the Actions runner through environment variables and runs the committed files
+as-is.
+
+⚠️ **BYOK caveat:** in the desktop app your AI key never leaves your machine.
+In the Action it lives in GitHub Actions secrets and requests are made from
+GitHub's runners, not your computer. That's a real difference in trust model —
+use the desktop app if that matters to you.
+
+Not yet done: publishing to the GitHub Marketplace (step 3 of the roadmap), which
+requires a release tag and a Marketplace listing from the repo owner's account.
