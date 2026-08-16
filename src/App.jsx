@@ -23,6 +23,37 @@ export default function App() {
   const [versionBump, setVersionBump] = useState(null);
   const [versionOverride, setVersionOverride] = useState("");
   const [publishedUrl, setPublishedUrl] = useState(null);
+  const [detailed, setDetailed] = useState(false);
+  const [status, setStatus] = useState(null);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  const [fromCache, setFromCache] = useState(false);
+
+  // Progress phases pushed from the main process.
+  useEffect(() => {
+    const unsubscribe = window.releaseRadar.onStatus((payload) => {
+      setStatus(payload);
+      if (payload.phase === "retry") setRetrySeconds(Math.ceil(payload.waitMs / 1000));
+    });
+    return unsubscribe;
+  }, []);
+
+  // Count the retry wait down so the UI doesn't look frozen during a backoff.
+  useEffect(() => {
+    if (status?.phase !== "retry" || retrySeconds <= 0) return;
+    const timer = setTimeout(() => setRetrySeconds((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [status, retrySeconds]);
+
+  function phaseLabel(fallback) {
+    if (!loading) return fallback;
+    if (status?.phase === "retry") {
+      return `Rate limited on ${status.provider}, retrying in ${Math.max(retrySeconds, 0)}s...`;
+    }
+    if (status?.phase === "github") return "Fetching from GitHub...";
+    if (status?.phase === "ai") return status.detailed ? "Analyzing diffs with AI..." : "Classifying with AI...";
+    if (status?.phase === "format") return "Formatting release notes...";
+    return "Working...";
+  }
 
   // Feature 2: auto-detect the latest tag + default branch as soon as a
   // valid "owner/name" repo is entered, pre-filling the range for the
@@ -71,12 +102,14 @@ export default function App() {
     setVersionBump(null);
     setVersionOverride("");
     setPublishedUrl(null);
+    setFromCache(false);
     try {
-      const result = await window.releaseRadar.fetchChanges({ repo, fromRef, toRef });
+      const result = await window.releaseRadar.fetchChanges({ repo, fromRef, toRef, detailed });
       if (result.empty) {
         setError(`No changes found between ${fromRef} and ${toRef}.`);
       } else {
         setChanges(result.changes);
+        setFromCache(Boolean(result.cached));
         // Feature 4: semver suggestion — pre-filled, never auto-applied.
         // The user can still edit the field before using it anywhere.
         const bump = suggestBump(result.changes);
@@ -170,8 +203,24 @@ export default function App() {
               </>
             )}
 
+            <label style={{ fontSize: 13, display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={detailed}
+                onChange={(e) => setDetailed(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                Detailed analysis (uses file diffs — needs a paid or higher-limit API key)
+                <br />
+                <span style={{ color: "#888" }}>
+                  Slower and uses far more tokens, but descriptions reflect the actual code change.
+                </span>
+              </span>
+            </label>
+
             <button onClick={handleFetch} disabled={loading || !fromRef || !toRef}>
-              {loading ? "Fetching..." : "Fetch & classify"}
+              {phaseLabel("Fetch & classify")}
             </button>
           </div>
 
@@ -179,7 +228,14 @@ export default function App() {
 
           {changes && changes.length > 0 && (
             <div>
-              <h2>Classified changes</h2>
+              <h2>
+                Classified changes{" "}
+                {fromCache && (
+                  <span style={{ fontSize: 12, fontWeight: "normal", color: "#888" }}>
+                    (cached — no AI call made)
+                  </span>
+                )}
+              </h2>
               <ul>
                 {changes.map((c, i) => (
                   <li key={i}>
@@ -216,7 +272,7 @@ export default function App() {
                   <option value="pull-request">Open as Pull Request</option>
                 </select>
                 <button onClick={() => handlePublish(false)} disabled={loading}>
-                  Generate
+                  {phaseLabel("Generate")}
                 </button>
               </div>
 
@@ -229,7 +285,7 @@ export default function App() {
                     Confirm?
                   </p>
                   <button onClick={() => handlePublish(true)} disabled={loading}>
-                    {loading ? "Publishing..." : "Confirm & publish"}
+                    {loading ? phaseLabel("Publishing...") : "Confirm & publish"}
                   </button>
                   {/* Errors also render near the top of the page, but that's
                       off-screen once the notes are long — repeat it here so a

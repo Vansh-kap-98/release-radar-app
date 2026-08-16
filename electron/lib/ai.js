@@ -69,93 +69,146 @@ Produce clean markdown with this structure, skipping any section with zero entri
 
 One bullet per entry: "- <title>" (prefix "**<scope>:**" if scope is present). No commentary beyond this structure. Output markdown only.`;
 
-async function callModel({ provider, apiKey, system, user }) {
-  if (provider === "anthropic") {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        // Back to 2000 while diff-aware is parked — max_tokens counts toward
-        // Anthropic's rate-limit budget. Raise this to ~8000 when re-enabling
-        // diffs: the longer titles otherwise truncate the JSON mid-array.
-        max_tokens: 2000,
-        system,
-        messages: [{ role: "user", content: user }]
-      })
-    });
-    if (!res.ok) throw new Error(`Anthropic API error: ${res.status} ${await res.text()}`);
-    const data = await res.json();
-    return data.content.map((b) => b.text || "").join("");
-  }
+// Each provider only describes HOW to shape a request and read a response.
+// Retry/backoff lives once in callModel() below, so it applies identically
+// to every provider instead of being duplicated per branch.
+const PROVIDERS = {
+  anthropic: {
+    label: "Anthropic",
+    buildRequest({ apiKey, system, user, maxTokens }) {
+      return {
+        url: "https://api.anthropic.com/v1/messages",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          // Anthropic requires max_tokens. Detailed mode needs more room:
+          // longer titles otherwise truncate the JSON array mid-response.
+          max_tokens: maxTokens ?? 2000,
+          system,
+          messages: [{ role: "user", content: user }]
+        })
+      };
+    },
+    extractText: (data) => data.content.map((b) => b.text || "").join("")
+  },
 
-  if (provider === "openai") {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user }
-        ]
-      })
-    });
-    if (!res.ok) throw new Error(`OpenAI API error: ${res.status} ${await res.text()}`);
-    const data = await res.json();
-    return data.choices[0].message.content;
-  }
+  openai: {
+    label: "OpenAI",
+    buildRequest({ apiKey, system, user }) {
+      return {
+        url: "https://api.openai.com/v1/chat/completions",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user }
+          ]
+        })
+      };
+    },
+    extractText: (data) => data.choices[0].message.content
+  },
 
-  if (provider === "groq") {
-    // Groq exposes an OpenAI-compatible endpoint, so this is nearly
-    // identical to the "openai" branch above — just a different base
-    // URL, key, and model name.
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-120b",
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user }
-        ]
-      })
-    });
-    if (!res.ok) throw new Error(`Groq API error: ${res.status} ${await res.text()}`);
-    const data = await res.json();
-    return data.choices[0].message.content;
+  groq: {
+    // Groq exposes an OpenAI-compatible endpoint — same shape, different
+    // base URL and model name.
+    label: "Groq",
+    buildRequest({ apiKey, system, user }) {
+      return {
+        url: "https://api.groq.com/openai/v1/chat/completions",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: "openai/gpt-oss-120b",
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user }
+          ]
+        })
+      };
+    },
+    extractText: (data) => data.choices[0].message.content
   }
+};
 
-  throw new Error(`Unknown AI provider: ${provider}`);
+const MAX_RETRIES = 3; // 1s, 2s, 4s — 4 total requests worst case
+const MAX_BACKOFF_MS = 60000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// `retry-after` may be seconds ("30") or an HTTP date. Handle both, and
+// never honour an absurdly long value.
+function parseRetryAfter(res) {
+  const header = res.headers?.get?.("retry-after");
+  if (!header) return null;
+
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.min(seconds * 1000, MAX_BACKOFF_MS);
+
+  const timestamp = Date.parse(header);
+  if (!Number.isNaN(timestamp)) {
+    return Math.min(Math.max(timestamp - Date.now(), 0), MAX_BACKOFF_MS);
+  }
+  return null;
+}
+
+// Provider-agnostic: builds the request via the provider spec, then handles
+// 429s with retry-after or exponential backoff. `onRetry` lets the caller
+// surface "retrying in Xs" to the UI.
+async function callModel({ provider, apiKey, system, user, maxTokens, onRetry }) {
+  const spec = PROVIDERS[provider];
+  if (!spec) throw new Error(`Unknown AI provider: ${provider}`);
+
+  const req = spec.buildRequest({ apiKey, system, user, maxTokens });
+
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body });
+
+    if (res.status === 429) {
+      if (attempt >= MAX_RETRIES) {
+        throw new Error(
+          `Rate limit reached on ${spec.label}. Try again in a minute, or switch providers in Settings.`
+        );
+      }
+      const waitMs = parseRetryAfter(res) ?? Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS);
+      onRetry?.({ provider: spec.label, attempt: attempt + 1, maxRetries: MAX_RETRIES, waitMs });
+      await sleep(waitMs);
+      continue;
+    }
+
+    if (!res.ok) throw new Error(`${spec.label} API error: ${res.status} ${await res.text()}`);
+    const data = await res.json();
+    return spec.extractText(data);
+  }
 }
 
 function stripCodeFence(text) {
   return text.trim().replace(/^```[a-z]*\n?/i, "").replace(/```$/, "").trim();
 }
 
-// `fileContext` is the summarized, truncated diff from github.js. It is
-// currently always null (feature parked — see README), so classification runs
-// on commit messages alone, exactly as it did before.
-async function classifyChanges(commits, fileContext, { provider, apiKey }) {
+// `fileContext` is the summarized, truncated diff from github.js. Callers
+// pass it only when the user enables "detailed analysis" — passing null keeps
+// the original, cheap, commit-messages-only behavior byte for byte.
+async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry }) {
   let system = CLASSIFY_SYSTEM_PROMPT;
   let payload = commits;
+  let maxTokens = 2000;
 
-  // PARKED (diff-aware changelog): this block activates automatically once
-  // github.js starts passing a real fileContext again — no other edits needed.
   if (fileContext) {
     const { files = [], omittedFileCount = 0, responseCapped = false } = fileContext;
 
     system = CLASSIFY_SYSTEM_PROMPT_DIFF_AWARE;
+    maxTokens = 8000;
     payload = {
       commits,
       files,
@@ -182,6 +235,8 @@ async function classifyChanges(commits, fileContext, { provider, apiKey }) {
     provider,
     apiKey,
     system,
+    maxTokens,
+    onRetry,
     user: JSON.stringify(payload, null, 2)
   });
 
@@ -201,14 +256,15 @@ async function classifyChanges(commits, fileContext, { provider, apiKey }) {
   return parsed.filter((entry) => entry && knownShas.has(entry.sha));
 }
 
-async function formatReleaseNotes(changes, repo, range, { provider, apiKey }) {
+async function formatReleaseNotes(changes, repo, range, { provider, apiKey, onRetry }) {
   const raw = await callModel({
     provider,
     apiKey,
+    onRetry,
     system: FORMAT_SYSTEM_PROMPT,
     user: JSON.stringify({ repo, range, changes }, null, 2)
   });
   return stripCodeFence(raw);
 }
 
-module.exports = { classifyChanges, formatReleaseNotes };
+module.exports = { classifyChanges, formatReleaseNotes, callModel };

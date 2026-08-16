@@ -145,12 +145,10 @@ async function fetchChangeRange({ repo, fromRef, toRef, githubToken }) {
     return { commits: [], fileContext: null, empty: true };
   }
 
-  // PARKED (diff-aware changelog): re-enable by swapping the two lines below.
-  // Sending file diffs to the AI blew through rate limits, so for now we go
-  // back to commit messages only. summarizeFiles() and truncatePatch() are
-  // still here, tested, and ready — nothing else needs to change.
-  // return { commits, fileContext: summarizeFiles(data.files), empty: false };
-  return { commits, fileContext: null, empty: false };
+  // The compare response already carries `files`, so summarizing costs no
+  // extra API call. Whether this reaches the AI prompt (and burns tokens) is
+  // decided by the caller's "detailed analysis" toggle, not here.
+  return { commits, fileContext: summarizeFiles(data.files), empty: false };
 }
 
 // Feature 1: visual commit picker. Lists commits on a branch (paginated via
