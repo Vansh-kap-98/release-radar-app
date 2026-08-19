@@ -8,8 +8,8 @@ control.
 ## How it works
 1. You enter a repo + two refs in the app.
 2. It calls GitHub's Compare API directly (your token, your rate limit).
-3. It sends the commit list to your chosen AI provider (Anthropic or
-   OpenAI, your API key) to classify each change.
+3. It sends the commit list to your chosen AI provider (Anthropic,
+   OpenAI, Groq, or Google Gemini — your API key) to classify each change.
 4. A second AI call formats the classified list into markdown.
 5. You review it, then optionally publish it — a GitHub Release draft
    or a Slack message — only after you click "Confirm & publish."
@@ -67,7 +67,7 @@ Recommended path for v1:
 release-radar-app/
 ├── core/                  # pipeline logic, NO Electron dependency
 │   ├── github.js          # commit ranges, commit list, tags, diff summarizing
-│   ├── ai.js              # classify + format, retry/backoff, 3 providers
+│   ├── ai.js              # classify + format, retry/backoff, 4 providers
 │   ├── publish.js         # GitHub Release / Slack / changelog PR
 │   └── index.js           # barrel export
 ├── action/                # companion GitHub Action (uses core/)
@@ -82,11 +82,12 @@ release-radar-app/
 │       └── history.js     # saved changelogs (plain, not encrypted)
 ├── src/
 │   ├── main.jsx
-│   ├── App.jsx
-│   ├── lib/semver.js
-│   └── components/        # SettingsForm, CommitPicker, HistoryList
+│   ├── styles.css         # Tailwind 4 theme + design tokens
+│   ├── lib/               # api (IPC bridge + mocks), semver, rr-utils, utils
+│   └── components/rr/     # App shell, GenerateTab, HistoryTab, SettingsTab,
+│                          # CommitPicker, ui primitives
 ├── index.html
-├── vite.config.js
+├── vite.config.mjs
 └── package.json
 ```
 
@@ -103,18 +104,48 @@ what actually changed.
 It's off by default because diffs add roughly 10–20k input tokens per run,
 which will exhaust a free-tier key quickly. The payload is bounded regardless:
 
+- generated files (lockfiles, `dist/`, `build/`, minified bundles, vendored
+  code) are listed by name but spend **no** diff budget — ranked purely by size
+  they would otherwise crowd out every real source change
+- real source is always ranked ahead of generated files, however large those are
+- the remaining budget is split across the files that will actually use it, so
+  one big file can't starve the rest
+- patches are cut on hunk (`@@`) boundaries — a diff sliced at an arbitrary
+  character offset ends mid-line and reads as noise
 - each patch capped at 200 lines or 3000 characters, whichever hits first
-- only the 30 most-changed files, with the omitted count reported
+- only 30 files, with the omitted count reported
 - a 60k-character ceiling across all patches combined
 - binary files and pure renames are described by name/status, never invented
 
 After a detailed run the UI reports exactly what was sent ("sent 12 files,
 34.2k chars of diff") so the token cost is never a black box.
 
+## AI providers
+
+Four are supported, chosen in Settings: **Anthropic** (Claude), **OpenAI**,
+**Groq**, and **Google Gemini**. Each provider only declares how to shape a
+request and read a response (`PROVIDERS` in `core/ai.js`); retry, backoff and
+caching live in shared code, so every provider gets them identically and
+adding a fifth cannot accidentally skip them.
+
+Two Gemini-specific notes, since its REST shape differs from the rest: the API
+key is sent as an `x-goog-api-key` header rather than in the URL (keeping it
+out of server logs and browser history), and internal "thinking" is minimised
+via `thinkingConfig: { thinkingLevel: "minimal" }` — otherwise the model spends
+the output budget on reasoning and truncates the JSON array mid-response.
+
+Note that Gemini 3.x **replaced** 2.5's `thinkingBudget` with `thinkingLevel`;
+sending the old field returns a bare `400 INVALID_ARGUMENT` that names no
+offending field. `"minimal"` is the lowest accepted value — `"none"` and
+`"off"` are rejected — and measures at zero thought tokens.
+
 ## Rate limits
 
-All AI calls retry automatically on HTTP 429: honouring `retry-after` when the
-provider sends one, otherwise backing off 1s → 2s → 4s, up to 3 retries. The
+All AI calls retry automatically on HTTP 429 (rate limited) and 5xx (provider
+transiently overloaded — Gemini returns 503 "high demand" under load):
+honouring `retry-after` when the provider sends one, otherwise backing off
+1s → 2s → 4s, up to 3 retries. 4xx errors fail immediately, since retrying a
+bad request or a bad key never helps. The
 UI shows a live countdown while waiting. After that it fails with a readable
 message naming the provider rather than a raw fetch error.
 

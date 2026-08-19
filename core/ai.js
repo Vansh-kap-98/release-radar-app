@@ -31,11 +31,18 @@ const CLASSIFY_SYSTEM_PROMPT_DIFF_AWARE = `You are a changelog classification en
 
 The commits and files are NOT paired one-to-one — the files describe the aggregate diff across the whole range. Use them together.
 
-For each COMMIT, output an object with:
-- "sha"
-- "title": a clear, specific one-line summary
+Output an array of CHANGE entries. Each entry has:
+- "sha": the commit it came from (must be one of the input shas)
+- "title": a specific, concrete one-line description
 - "category": one of "feat", "fix", "breaking", "docs", "chore"
-- "scope" (optional, only if clearly indicated, e.g. "feat(auth): ...")
+- "scope" (optional): the affected area, e.g. "auth", "picker", "api"
+
+Entries are NOT one-per-commit. A single commit often bundles several distinct
+user-facing changes — especially when its message is something like "features 1
+2 3 added" or "frontend". When the diffs show several separable changes in one
+commit, emit a SEPARATE entry for each one, reusing that commit's sha. Up to 6
+entries per commit. Conversely, if several commits are clearly one change
+(a fix and its follow-up typo), one entry is fine.
 
 Using the diffs:
 - Use the file diffs to understand the actual code impact of each commit, not just the commit message wording.
@@ -44,7 +51,14 @@ Using the diffs:
 - Do not invent details not visible in either the messages or the diffs.
 - If a file is listed but its patch was truncated or omitted (see its "note", or "diffCoverage"), you may say that file changed, but never describe what changed inside a diff you cannot see.
 - Files that look generated (lockfiles, build output, vendored dependencies) are normally "chore" and need no deep analysis.
-- Keep every title under 20 words — this is a changelog, not a commit-by-commit code review.
+- Be concrete. Name the feature, module, command, or UI surface the diff shows —
+  "Commit range can now be picked by clicking two rows in the commit list" beats
+  "improve UI". Prefer the reader's vocabulary over file paths, but a specific
+  filename is better than a vague abstraction.
+- Say what changed for a user of the software, not what the patch did mechanically.
+  "Added retry with exponential backoff on rate-limited AI requests" beats
+  "modified callModel function".
+- Keep every title under 25 words. Specific, not exhaustive.
 
 Category rules:
 - "breaking": contains "BREAKING CHANGE", a "!" after the type/scope, or explicitly describes a removed/incompatible change.
@@ -53,7 +67,10 @@ Category rules:
 - "docs": documentation-only changes.
 - "chore": anything else, or anything too vague to confidently classify.
 
-Output exactly one object per commit in "commits" — never more, never fewer, and never a sha that wasn't in the input. Return ONLY valid JSON: an array of the objects above. No prose, no markdown fencing.`;
+Every "sha" MUST be one of the input commit shas — never invent one. Aim to
+surface every distinct change the diffs reveal; a large refactor commit should
+not collapse into a single vague line. Return ONLY valid JSON: an array of the
+objects above. No prose, no markdown fencing.`;
 
 const FORMAT_SYSTEM_PROMPT = `You are a release notes formatter. You will receive a JSON array of classified changes (title, category, optional scope) plus a repo name and range.
 
@@ -68,6 +85,14 @@ Produce clean markdown with this structure, skipping any section with zero entri
 ### Chores
 
 One bullet per entry: "- <title>" (prefix "**<scope>:**" if scope is present). No commentary beyond this structure. Output markdown only.`;
+
+// Model IDs move fast; keep them together so swapping one is a single edit.
+const MODELS = {
+  anthropic: "claude-sonnet-4-6",
+  openai: "gpt-4o-mini",
+  groq: "openai/gpt-oss-120b",
+  google: "gemini-3.6-flash"
+};
 
 // Each provider only describes HOW to shape a request and read a response.
 // Retry/backoff lives once in callModel() below, so it applies identically
@@ -84,7 +109,7 @@ const PROVIDERS = {
           "anthropic-version": "2023-06-01"
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: MODELS.anthropic,
           // Anthropic requires max_tokens. Detailed mode needs more room:
           // longer titles otherwise truncate the JSON array mid-response.
           max_tokens: maxTokens ?? 2000,
@@ -106,7 +131,7 @@ const PROVIDERS = {
           authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: MODELS.openai,
           messages: [
             { role: "system", content: system },
             { role: "user", content: user }
@@ -129,7 +154,7 @@ const PROVIDERS = {
           authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: "openai/gpt-oss-120b",
+          model: MODELS.groq,
           messages: [
             { role: "system", content: system },
             { role: "user", content: user }
@@ -138,6 +163,49 @@ const PROVIDERS = {
       };
     },
     extractText: (data) => data.choices[0].message.content
+  },
+
+  google: {
+    // Gemini's REST shape differs from the OpenAI-style providers: the system
+    // prompt is its own field, messages are "contents" with "parts", and the
+    // key goes in a header rather than the URL (keeping it out of logs).
+    label: "Google Gemini",
+    buildRequest({ apiKey, system, user, maxTokens }) {
+      return {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.google}:generateContent`,
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ role: "user", parts: [{ text: user }] }],
+          generationConfig: {
+            maxOutputTokens: maxTokens ?? 2000,
+            // Gemini spends maxOutputTokens on internal reasoning before
+            // emitting any text, which truncates the JSON array mid-response
+            // on a mechanical shaping task like this. Gemini 3.x replaced
+            // 2.5's `thinkingBudget` with `thinkingLevel`; "minimal" is the
+            // lowest accepted value ("none"/"off" are rejected) and measures
+            // at zero thought tokens.
+            thinkingConfig: { thinkingLevel: "minimal" }
+          }
+        })
+      };
+    },
+    extractText: (data) => {
+      const candidate = data.candidates?.[0];
+      if (!candidate) {
+        // Safety filters and prompt blocks return no candidate at all.
+        const reason = data.promptFeedback?.blockReason;
+        throw new Error(
+          reason
+            ? `Google Gemini returned no content (blocked: ${reason}).`
+            : "Google Gemini returned no content."
+        );
+      }
+      return (candidate.content?.parts ?? []).map((part) => part.text || "").join("");
+    }
   }
 };
 
@@ -174,10 +242,16 @@ async function callModel({ provider, apiKey, system, user, maxTokens, onRetry })
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(req.url, { method: "POST", headers: req.headers, body: req.body });
 
-    if (res.status === 429) {
+    // 429 is rate limiting; 5xx is the provider being transiently overloaded
+    // (Gemini returns 503 "high demand" under load). Both are worth retrying.
+    const retryable = res.status === 429 || res.status >= 500;
+
+    if (retryable) {
       if (attempt >= MAX_RETRIES) {
         throw new Error(
-          `Rate limit reached on ${spec.label}. Try again in a minute, or switch providers in Settings.`
+          res.status === 429
+            ? `Rate limit reached on ${spec.label}. Try again in a minute, or switch providers in Settings.`
+            : `${spec.label} is temporarily unavailable (${res.status}). Try again shortly, or switch providers in Settings.`
         );
       }
       const waitMs = parseRetryAfter(res) ?? Math.min(1000 * 2 ** attempt, MAX_BACKOFF_MS);

@@ -12,7 +12,7 @@ inputs:
     required: true
     default: ${{ github.token }}
   ai-provider:
-    description: "anthropic | openai | groq"
+    description: "anthropic | openai | groq | google"
     required: false
     default: "anthropic"
   ai-api-key:

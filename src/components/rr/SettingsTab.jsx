@@ -92,6 +92,7 @@ export default function SettingsTab() {
             <option value="anthropic">Anthropic (Claude)</option>
             <option value="openai">OpenAI</option>
             <option value="groq">Groq</option>
+            <option value="google">Google (Gemini)</option>
           </Select>
         </div>
 

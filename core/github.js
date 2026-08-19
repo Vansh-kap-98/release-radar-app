@@ -32,43 +32,97 @@ const TOTAL_PATCH_BUDGET = 60000;
 // GitHub's Compare API returns at most 300 files per response.
 const GITHUB_FILE_CAP = 300;
 
-function truncatePatch(patch) {
+// Lockfiles, build output and vendored code are almost always the largest
+// diffs in a range and the least informative. Ranking purely by change count
+// lets them crowd real source out of the payload, so they are listed by name
+// (nothing is hidden from the model) but never spend patch budget.
+const GENERATED_PATTERNS = [
+  /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lock(b)?|composer\.lock|Gemfile\.lock|poetry\.lock|Cargo\.lock|go\.sum)$/i,
+  /(^|\/)(dist|build|out|coverage|node_modules|vendor|__snapshots__)\//i,
+  /\.min\.(js|css)$/i,
+  /\.(map|lock)$/i,
+  /(^|\/)__generated__\//i,
+  /\.(pb|generated)\.(go|ts|js)$/i
+];
+
+function isGeneratedFile(filename) {
+  return GENERATED_PATTERNS.some((re) => re.test(filename || ""));
+}
+
+// Truncates on hunk boundaries where possible. A diff cut at an arbitrary
+// character offset ends mid-line inside a hunk, which reads as noise; whole
+// hunks stay interpretable, and several small hunks from across a file say
+// more than the first 3000 characters of its opening hunk.
+function truncatePatch(patch, charCap = MAX_PATCH_CHARS) {
   const lines = patch.split("\n");
-  let kept = lines;
-  let omittedLines = 0;
+  if (patch.length <= charCap && lines.length <= MAX_PATCH_LINES) return patch;
 
-  if (lines.length > MAX_PATCH_LINES) {
-    kept = lines.slice(0, MAX_PATCH_LINES);
-    omittedLines = lines.length - MAX_PATCH_LINES;
+  // Split into hunks, keeping any preamble before the first @@ header.
+  const hunks = [];
+  let current = [];
+  for (const line of lines) {
+    if (line.startsWith("@@") && current.length) {
+      hunks.push(current);
+      current = [];
+    }
+    current.push(line);
+  }
+  if (current.length) hunks.push(current);
+
+  const kept = [];
+  let used = 0;
+  let keptLines = 0;
+  for (const hunk of hunks) {
+    const text = hunk.join("\n");
+    if (used + text.length > charCap || keptLines + hunk.length > MAX_PATCH_LINES) break;
+    kept.push(text);
+    used += text.length + 1;
+    keptLines += hunk.length;
   }
 
+  // A single hunk bigger than the whole budget still has to be cut somewhere;
+  // fall back to a line-boundary cut so no line is left half-written.
+  if (kept.length === 0) {
+    const slice = [];
+    let n = 0;
+    for (const line of lines) {
+      if (n + line.length > charCap || slice.length >= MAX_PATCH_LINES) break;
+      slice.push(line);
+      n += line.length + 1;
+    }
+    kept.push(slice.join("\n"));
+    keptLines = slice.length;
+  }
+
+  const omittedLines = lines.length - keptLines;
   let text = kept.join("\n");
-
-  // Whichever limit bites first wins — recount omitted lines if the
-  // character cap cut us shorter than the line cap did.
-  if (text.length > MAX_PATCH_CHARS) {
-    text = text.slice(0, MAX_PATCH_CHARS);
-    omittedLines = lines.length - text.split("\n").length;
-  }
-
-  if (omittedLines > 0) {
-    text += `\n... (diff truncated, ${omittedLines} more lines)`;
-  }
+  if (omittedLines > 0) text += `\n... (diff truncated, ${omittedLines} more lines)`;
   return text;
 }
 
-// Picks the most-changed files, truncates their patches, and records what
-// was left out — so the AI can say "this file changed" without being able to
-// invent *what* changed inside a diff it never saw.
+// Chooses which files' diffs the AI actually sees. Ranking purely by change
+// count lets lockfiles and build output win every time, so generated files are
+// listed by name but spend no patch budget, and real source is ranked ahead of
+// them regardless of size.
 function summarizeFiles(rawFiles) {
   const all = rawFiles ?? [];
   const responseCapped = all.length >= GITHUB_FILE_CAP;
 
-  const sorted = [...all].sort((a, b) => (b.changes ?? 0) - (a.changes ?? 0));
-  const selected = sorted.slice(0, MAX_FILES);
-  const omittedFileCount = sorted.length - selected.length;
+  const byChanges = (a, b) => (b.changes ?? 0) - (a.changes ?? 0);
+  const source = all.filter((f) => !isGeneratedFile(f.filename)).sort(byChanges);
+  const generated = all.filter((f) => isGeneratedFile(f.filename)).sort(byChanges);
+
+  // Source first, so a huge lockfile can never displace a real code change.
+  const selected = [...source, ...generated].slice(0, MAX_FILES);
+  const omittedFileCount = all.length - selected.length;
 
   let budget = TOTAL_PATCH_BUDGET;
+  const patchable = selected.filter((f) => f.patch && !isGeneratedFile(f.filename)).length;
+  // Spread the budget across the files that will actually use it, so one large
+  // file cannot eat everything and starve the rest.
+  const perFileCap = patchable > 0
+    ? Math.max(800, Math.min(MAX_PATCH_CHARS, Math.floor(TOTAL_PATCH_BUDGET / patchable)))
+    : MAX_PATCH_CHARS;
 
   const files = selected.map((f) => {
     const entry = {
@@ -85,6 +139,12 @@ function summarizeFiles(rawFiles) {
       entry.note = `renamed ${f.previous_filename} → ${f.filename}`;
     }
 
+    if (isGeneratedFile(f.filename)) {
+      entry.generated = true;
+      entry.note = entry.note ?? "generated/build output — diff omitted, treat as chore";
+      return entry;
+    }
+
     // Binary files, and renames with no content change, arrive with no patch.
     if (!f.patch) {
       entry.note = entry.note ?? `no textual diff available (status: ${f.status})`;
@@ -96,10 +156,7 @@ function summarizeFiles(rawFiles) {
       return entry;
     }
 
-    let patch = truncatePatch(f.patch);
-    if (patch.length > budget) {
-      patch = patch.slice(0, budget) + "\n... (diff truncated to stay within the total size budget)";
-    }
+    const patch = truncatePatch(f.patch, Math.min(perFileCap, budget));
     budget -= patch.length;
     entry.patch = patch;
     return entry;
