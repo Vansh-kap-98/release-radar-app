@@ -16,13 +16,17 @@
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^4.3.0",
+    "clsx": "^2.1.1",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss": "^4.3.3",
     "vite": "^5.4.0",
     "wait-on": "^7.2.0"
   },
@@ -37,8 +41,15 @@
     "directories": {
       "output": "release"
     },
-    "mac": { "target": "dmg", "category": "public.app-category.developer-tools" },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage" }
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.developer-tools"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }
