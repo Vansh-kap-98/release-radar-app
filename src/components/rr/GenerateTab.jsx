@@ -5,6 +5,8 @@ import {
   listCommits,
   onStatus,
   publish as publishApi,
+  exportNotes,
+  exportSave,
 } from "@/lib/api.js";
 import { formatChars, isValidRepo, shortRef } from "@/lib/rr-utils";
 import CommitPicker from "./CommitPicker";
@@ -74,6 +76,8 @@ export default function GenerateTab({ onSaved, prefill }) {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
   const [publishedUrl, setPublishedUrl] = useState("");
+  const [exportNote, setExportNote] = useState("");
+  const [exportError, setExportError] = useState("");
 
   const repoValid = isValidRepo(repo);
   const debounceRef = useRef(null);
@@ -271,6 +275,31 @@ export default function GenerateTab({ onSaved, prefill }) {
   // Computed in the main process from core/semver.js — see main.js. Null when
   // the range start isn't a parseable version (a raw SHA, say), in which case
   // we show nothing rather than a wrong suggestion.
+  // Feature 6a: local exports. Nothing leaves the machine, so these skip the
+  // confirm-before-publish step the remote targets go through.
+  const runExport = async (format, { save } = {}) => {
+    setExportError("");
+    setExportNote("");
+    try {
+      const title = `Release notes ${version || rangeLabel || repo}`.trim();
+      if (save) {
+        const res = await exportSave({
+          markdown,
+          format,
+          title,
+          defaultName: version ? `CHANGELOG-${version}` : "CHANGELOG",
+        });
+        setExportNote(res.saved ? `Saved to ${res.path}` : "");
+        return;
+      }
+      const { content } = await exportNotes({ markdown, format, title });
+      await navigator.clipboard?.writeText(content);
+      setExportNote(format === "html" ? "HTML copied to clipboard" : "Plain text copied to clipboard");
+    } catch (e) {
+      setExportError(e?.message || "Export failed.");
+    }
+  };
+
   const suggestion = result?.versionSuggestion ?? null;
   const hasSuggestion = Boolean(suggestion?.suggested);
 
@@ -515,6 +544,33 @@ export default function GenerateTab({ onSaved, prefill }) {
                 <pre className="max-h-[280px] overflow-auto rounded-md border border-border bg-muted/60 p-3 font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap">
                   {markdown}
                 </pre>
+
+                <div className="space-y-1.5">
+                  <p className="text-[12px] text-muted-foreground">
+                    Export a copy — stays on your machine, nothing is published.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button variant="secondary" size="sm" onClick={() => runExport("html")}>
+                      Copy as HTML
+                    </Button>
+                    <Button variant="secondary" size="sm" onClick={() => runExport("text")}>
+                      Copy as plain text
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => runExport("html", { save: true })}>
+                      Save .html
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => runExport("text", { save: true })}>
+                      Save .txt
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => runExport("markdown", { save: true })}>
+                      Save .md
+                    </Button>
+                  </div>
+                  {exportNote ? (
+                    <p className="text-[12px] break-all text-cat-feat">{exportNote}</p>
+                  ) : null}
+                  <ErrorText>{exportError}</ErrorText>
+                </div>
               </div>
             ) : null}
           </Panel>

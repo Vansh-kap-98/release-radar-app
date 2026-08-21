@@ -1,11 +1,13 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
+const fs = require("fs/promises");
 const { getSecret, setSecret, getAll } = require("./lib/store");
 // Pipeline logic lives in ../core (no Electron dependency) so the same code
 // can run in the desktop app and in the companion GitHub Action.
 const { fetchChangeRange, listCommits, getRepoDefaults } = require("../core/github");
 const { classifyChanges, formatReleaseNotes } = require("../core/ai");
 const { nextVersion } = require("../core/semver");
+const { markdownToHtml, markdownToPlainText } = require("../core/export");
 const { publishGithubRelease, postToSlack, openChangelogPullRequest } = require("../core/publish");
 const { listHistory, addHistoryEntry, deleteHistoryEntry, clearHistory } = require("./lib/history");
 
@@ -129,6 +131,50 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
   } finally {
     sendStatus(event, { phase: "idle" });
   }
+});
+
+// --- Feature 6a: export the changelog as HTML or plain text ---
+//
+// These are local outputs, not publish targets: nothing leaves the machine, so
+// they deliberately skip the confirm-before-publish guardrail that the remote
+// targets go through.
+
+const EXPORTS = {
+  html: {
+    label: "HTML",
+    extension: "html",
+    convert: (md, title) => markdownToHtml(md, { fullDocument: true, title })
+  },
+  text: { label: "Plain text", extension: "txt", convert: (md) => markdownToPlainText(md) },
+  markdown: { label: "Markdown", extension: "md", convert: (md) => md }
+};
+
+function convertExport({ markdown, format, title }) {
+  const spec = EXPORTS[format];
+  if (!spec) throw new Error(`Unknown export format: ${format}`);
+  if (!markdown) throw new Error("Nothing to export yet — generate release notes first.");
+  return { content: spec.convert(markdown, title || "Release notes"), format, extension: spec.extension };
+}
+
+ipcMain.handle("release-radar:export", (_event, params) => convertExport(params));
+
+ipcMain.handle("release-radar:export-save", async (event, { markdown, format, title, defaultName }) => {
+  const { content, extension } = convertExport({ markdown, format, title });
+  const spec = EXPORTS[format];
+
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: `Export changelog as ${spec.label}`,
+    defaultPath: `${(defaultName || "CHANGELOG").replace(/[^\w.-]+/g, "-")}.${extension}`,
+    filters: [
+      { name: spec.label, extensions: [extension] },
+      { name: "All files", extensions: ["*"] }
+    ]
+  });
+
+  if (canceled || !filePath) return { saved: false, canceled: true };
+  await fs.writeFile(filePath, content, "utf8");
+  return { saved: true, path: filePath };
 });
 
 // --- Feature 8: local history of generated changelogs ---

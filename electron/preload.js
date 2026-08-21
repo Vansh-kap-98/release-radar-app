@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld("releaseRadar", {
   listCommits: (params) => ipcRenderer.invoke("release-radar:list-commits", params),
   getRepoDefaults: (params) => ipcRenderer.invoke("release-radar:repo-defaults", params),
 
+  exportNotes: (params) => ipcRenderer.invoke("release-radar:export", params),
+  exportSave: (params) => ipcRenderer.invoke("release-radar:export-save", params),
+
   getHistory: () => ipcRenderer.invoke("release-radar:history-list"),
   deleteHistoryEntry: (id) => ipcRenderer.invoke("release-radar:history-delete", { id }),
   clearHistory: () => ipcRenderer.invoke("release-radar:history-clear"),

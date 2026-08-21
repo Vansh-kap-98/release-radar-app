@@ -8,6 +8,7 @@
 const { fetchChangeRange, listCommits, getRepoDefaults, listTags, findPreviousTag, summarizeFiles, truncatePatch } = require("./github");
 const { classifyChanges, formatReleaseNotes, callModel } = require("./ai");
 const { parseVersion, suggestBump, nextVersion } = require("./semver");
+const { markdownToHtml, markdownToPlainText } = require("./export");
 const { publishGithubRelease, postToSlack, openChangelogPullRequest } = require("./publish");
 
 module.exports = {
@@ -23,6 +24,9 @@ module.exports = {
   parseVersion,
   suggestBump,
   nextVersion,
+  // Export formats
+  markdownToHtml,
+  markdownToPlainText,
   // AI
   classifyChanges,
   formatReleaseNotes,

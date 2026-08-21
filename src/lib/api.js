@@ -368,6 +368,25 @@ export async function publish({
   return { markdown: md, published: true, publishedUrl: urls[publishTarget] };
 }
 
+/* --------------------------------- export ---------------------------------- */
+
+// The real conversion lives in core/export.js and runs in the main process.
+// In browser preview there is no bridge, so we fall back to returning the raw
+// markdown — enough to exercise the UI without duplicating the converters.
+export async function exportNotes({ markdown, format, title }) {
+  if (bridge()) return bridge().exportNotes({ markdown, format, title });
+  await delay(120);
+  return { content: markdown, format, extension: format === "html" ? "html" : "txt" };
+}
+
+export async function exportSave({ markdown, format, title, defaultName }) {
+  if (bridge()) return bridge().exportSave({ markdown, format, title, defaultName });
+  await delay(200);
+  // No native save dialog in a browser — report the cancel path instead of
+  // pretending a file was written.
+  return { saved: false, canceled: true };
+}
+
 /* --------------------------------- history --------------------------------- */
 
 export async function getHistory() {
