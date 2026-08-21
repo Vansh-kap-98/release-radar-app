@@ -1,3 +1,15 @@
+## Vansh-kap-98/release-radar-app — a68b2f431aa36b96a52c15a33594f1c792267097...afe10c3d53845efd6d2ee17746e351856ec671bd
+
+### Fixes
+- fixes
+
+### Documentation
+- update changelog for cf5e06dc2dfe0f1e186f3ca9fa0991efb1aee17d...76c9ab4b20bf4862d76dfca8795d9ea8d91e23b7 (#6)
+
+### Chores
+- frontend
+- annoying ahh
+
 ## Vansh-kap-98/release-radar-app — cf5e06dc2dfe0f1e186f3ca9fa0991efb1aee17d...76c9ab4b20bf4862d76dfca8795d9ea8d91e23b7
 
 ### Chores
