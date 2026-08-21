@@ -247,9 +247,31 @@ export async function fetchChanges({ repo, fromRef, toRef, detailed, force }) {
     },
   ];
 
+  // Mirrors the shape main.js returns (it computes this via core/semver.js).
+  // Deliberately crude here — this is mock data for browser preview only.
+  const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(String(fromRef ?? "").trim());
+  const versionSuggestion = m
+    ? (() => {
+        const prefix = String(fromRef).trim().startsWith("v") ? "v" : "";
+        const [maj, min] = [Number(m[1]), Number(m[2])];
+        return {
+          current: fromRef,
+          bump: "minor",
+          suggested: `${prefix}${maj}.${min + 1}.0`,
+          reasoning: "2 new features — suggesting a minor version bump."
+        };
+      })()
+    : {
+        current: fromRef,
+        bump: null,
+        suggested: null,
+        reasoning: `Could not parse a version from '${fromRef}' — expected MAJOR.MINOR.PATCH.`
+      };
+
   return {
     changes,
     empty: false,
+    versionSuggestion,
     cached: !force && !detailed,
     ...(detailed
       ? {

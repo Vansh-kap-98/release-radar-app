@@ -1,8 +1,5 @@
-import {
-  suggestBump as semverSuggestBump,
-  nextVersion as semverNextVersion,
-} from "./semver";
-
+// Version suggestion now lives in core/semver.js and is computed in the main
+// process, so it is shared with the GitHub Action instead of duplicated here.
 export function relativeTime(input) {
   const then = new Date(input).getTime();
   const diff = Math.max(0, Date.now() - then);
@@ -25,15 +22,6 @@ export const shortRef = (ref) =>
 export const firstLine = (msg) => String(msg ?? "").split("\n")[0];
 
 export const isValidRepo = (repo) => /^[\w.-]+\/[\w.-]+$/.test(String(repo).trim());
-
-export function suggestBump(changes, latestTag) {
-  const bump = semverSuggestBump(changes);
-  return {
-    bump,
-    nextVersion: semverNextVersion(latestTag, bump) ?? "",
-    firstRelease: !latestTag,
-  };
-}
 
 export const formatChars = (n) =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);

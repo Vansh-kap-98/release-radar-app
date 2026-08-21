@@ -12,8 +12,12 @@ function writeHeaders(githubToken) {
   return { ...authHeaders(githubToken), "content-type": "application/json" };
 }
 
-async function publishGithubRelease({ repo, range, markdown, githubToken }) {
-  const toRef = range.split("...")[1];
+// `version` is the user-confirmed tag (from the semver suggestion, possibly
+// edited). It is passed in rather than derived here so that what the user
+// approved in the UI is exactly what gets tagged. Falls back to the range's
+// end ref when no version was supplied.
+async function publishGithubRelease({ repo, range, markdown, githubToken, version }) {
+  const toRef = (version && String(version).trim()) || range.split("...")[1];
   const res = await fetch(`https://api.github.com/repos/${repo}/releases`, {
     method: "POST",
     headers: { ...authHeaders(githubToken), "content-type": "application/json" },
@@ -52,7 +56,10 @@ function sanitizeBranchSegment(text) {
 // Contents API (create-or-update-file, which internally handles the
 // blob/commit for us) rather than driving the low-level Git Data API by
 // hand — same end result, less surface area for a single-file change.
-async function openChangelogPullRequest({ repo, range, markdown, version, githubToken }) {
+// `prBody` lets the PR description carry extra context (a version suggestion,
+// say) without that text leaking into the committed CHANGELOG.md, which should
+// contain only the changelog itself. Defaults to the changelog text.
+async function openChangelogPullRequest({ repo, range, markdown, version, githubToken, prBody }) {
   // 1. Find the repo's actual default branch (not a hardcoded "main").
   const repoRes = await fetch(`https://api.github.com/repos/${repo}`, { headers: authHeaders(githubToken) });
   if (!repoRes.ok) throw new Error(`Failed to read repo info: ${repoRes.status} ${await repoRes.text()}`);
@@ -123,7 +130,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
       title: `Release notes: ${version || range}`,
       head: branchName,
       base: defaultBranch,
-      body: markdown
+      body: prBody || markdown
     })
   });
   if (!prRes.ok) {

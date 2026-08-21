@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchChanges,
   getRepoDefaults,
@@ -6,7 +6,7 @@ import {
   onStatus,
   publish as publishApi,
 } from "@/lib/api.js";
-import { formatChars, isValidRepo, shortRef, suggestBump } from "@/lib/rr-utils";
+import { formatChars, isValidRepo, shortRef } from "@/lib/rr-utils";
 import CommitPicker from "./CommitPicker";
 import { Badge, Button, ErrorText, Input, Label, Panel, Select, Toggle } from "./ui";
 
@@ -222,8 +222,8 @@ export default function GenerateTab({ onSaved, prefill }) {
         setResult(null);
       } else {
         setResult(res);
-        const s = suggestBump(res.changes, defaults?.latestTag ?? null);
-        setVersion(s.nextVersion);
+        // Pre-fill only; the field stays editable and nothing auto-publishes.
+        setVersion(res.versionSuggestion?.suggested ?? "");
       }
     } catch (e) {
       setError(e?.message || "Something went wrong while classifying commits.");
@@ -268,10 +268,11 @@ export default function GenerateTab({ onSaved, prefill }) {
     }
   };
 
-  const suggestion = useMemo(
-    () => (result ? suggestBump(result.changes, defaults?.latestTag ?? null) : null),
-    [result, defaults],
-  );
+  // Computed in the main process from core/semver.js — see main.js. Null when
+  // the range start isn't a parseable version (a raw SHA, say), in which case
+  // we show nothing rather than a wrong suggestion.
+  const suggestion = result?.versionSuggestion ?? null;
+  const hasSuggestion = Boolean(suggestion?.suggested);
 
   const targetLabel =
     PUBLISH_TARGETS.find((t) => t.value === publishTarget)?.label ?? publishTarget;
@@ -416,10 +417,13 @@ export default function GenerateTab({ onSaved, prefill }) {
 
           <Panel className="space-y-2">
             <h2 className="text-[13px] font-semibold">
-              {suggestion?.firstRelease
-                ? "No existing tag found, this would be your first release"
-                : `Suggested bump: ${suggestion?.bump} (from ${defaults?.latestTag})`}
+              {hasSuggestion
+                ? `Suggested next version: ${suggestion.suggested} (${suggestion.bump} bump)`
+                : "No version suggestion available"}
             </h2>
+            {suggestion?.reasoning ? (
+              <p className="text-[12px] text-muted-foreground">{suggestion.reasoning}</p>
+            ) : null}
             <div className="max-w-[220px]">
               <Label htmlFor="version">Version</Label>
               <Input
@@ -427,6 +431,7 @@ export default function GenerateTab({ onSaved, prefill }) {
                 className="font-mono"
                 value={version}
                 onChange={(e) => setVersion(e.target.value)}
+                placeholder="v1.5.0"
                 spellCheck={false}
               />
             </div>

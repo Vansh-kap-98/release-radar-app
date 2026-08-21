@@ -5,6 +5,7 @@ const { getSecret, setSecret, getAll } = require("./lib/store");
 // can run in the desktop app and in the companion GitHub Action.
 const { fetchChangeRange, listCommits, getRepoDefaults } = require("../core/github");
 const { classifyChanges, formatReleaseNotes } = require("../core/ai");
+const { nextVersion } = require("../core/semver");
 const { publishGithubRelease, postToSlack, openChangelogPullRequest } = require("../core/publish");
 const { listHistory, addHistoryEntry, deleteHistoryEntry, clearHistory } = require("./lib/history");
 
@@ -101,6 +102,16 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
 
     const result = { changes, empty: false };
 
+    // Version suggestion is derived from the classification we already have —
+    // no extra AI call. Computed here (not in the renderer) because core/ is
+    // CommonJS and Vite would not transform it for the browser bundle.
+    // Advisory only: the UI pre-fills it and the user can edit before publishing.
+    try {
+      result.versionSuggestion = nextVersion(fromRef, changes);
+    } catch {
+      result.versionSuggestion = null; // never block the flow on a suggestion
+    }
+
     // Report what the diffs actually contributed, so "detailed mode" isn't a
     // black box — and so an empty/failed diff payload is visible rather than
     // silently producing toggle-off-quality output.
@@ -187,7 +198,7 @@ ipcMain.handle("release-radar:publish", async (event, { repo, range, changes, ma
   if (publishTarget === "github-release") {
     const githubToken = getSecret("githubToken");
     if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
-    const url = await publishGithubRelease({ repo, range, markdown, githubToken });
+    const url = await publishGithubRelease({ repo, range, markdown, githubToken, version });
     return { markdown, published: true, publishedUrl: url };
   }
 

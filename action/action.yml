@@ -39,6 +39,10 @@ inputs:
 outputs:
   markdown:
     description: "The generated changelog markdown."
+  suggested-version:
+    description: "Suggested next version from the classified changes, e.g. v1.5.0. Empty when the range start is not a parseable version."
+  suggested-bump:
+    description: "major | minor | patch. Empty when no suggestion was possible."
   published-url:
     description: "URL of the created pull request or draft release, when one was made."
   skipped:

@@ -14,7 +14,8 @@ const {
   classifyChanges,
   formatReleaseNotes,
   openChangelogPullRequest,
-  publishGithubRelease
+  publishGithubRelease,
+  nextVersion
 } = require("../core");
 
 function getInput(name, fallback = "") {
@@ -118,6 +119,18 @@ async function run() {
   setOutput("skipped", "false");
   summarize(markdown);
 
+  // Same suggestion logic as the desktop app (core/semver.js) — derived from
+  // the classification, no extra AI call. Advisory: it annotates the PR, it
+  // does not tag anything.
+  const suggestion = nextVersion(fromRef, changes);
+  if (suggestion.suggested) {
+    log(`Suggested next version: ${suggestion.suggested} (${suggestion.bump}) — ${suggestion.reasoning}`);
+    setOutput("suggested-version", suggestion.suggested);
+    setOutput("suggested-bump", suggestion.bump);
+  } else {
+    log(`No version suggestion: ${suggestion.reasoning}`);
+  }
+
   const version = getInput("version", pushedTag || "");
 
   if (publishTarget === "markdown-only") {
@@ -126,14 +139,37 @@ async function run() {
   }
 
   if (publishTarget === "github-release") {
-    const url = await publishGithubRelease({ repo, range, markdown, githubToken });
+    const url = await publishGithubRelease({
+      repo,
+      range,
+      markdown,
+      githubToken,
+      version: version || suggestion.suggested || ""
+    });
     log(`Created draft release: ${url}`);
     setOutput("published-url", url);
     return;
   }
 
   if (publishTarget === "pull-request") {
-    const url = await openChangelogPullRequest({ repo, range, markdown, version, githubToken });
+    // Lead the PR body with the suggestion so a reviewer sees it before the notes.
+    const body = suggestion.suggested
+      ? `**Suggested next version: ${suggestion.suggested}** (${suggestion.bump} bump)
+
+_${suggestion.reasoning}_
+
+---
+
+${markdown}`
+      : markdown;
+    const url = await openChangelogPullRequest({
+      repo,
+      range,
+      markdown,        // committed to CHANGELOG.md — changelog text only
+      prBody: body,    // PR description — changelog plus the version suggestion
+      version: version || suggestion.suggested || "",
+      githubToken
+    });
     log(`Opened pull request: ${url}`);
     setOutput("published-url", url);
     return;
