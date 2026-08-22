@@ -1,3 +1,25 @@
+## Vansh-kap-98/release-radar-app — f3fd5759587ae3f20a99cb2bd3870d9440cc989a...a47fa1c1f2469776421be66862d8c84daa2c47e5
+
+### Features
+- feature 8 (#5)
+- features 1 2 3 4 5 8 successfully added and validated
+
+### Fixes
+- fix
+- fixes
+
+### Documentation
+- update changelog for cf5e06dc2dfe0f1e186f3ca9fa0991efb1aee17d...76c9ab4b20bf4862d76dfca8795d9ea8d91e23b7 (#6)
+- update changelog for a68b2f431aa36b96a52c15a33594f1c792267097...afe10c3d53845efd6d2ee17746e351856ec671bd (#7)
+
+### Chores
+- what?
+- frontend
+- annoying ahh
+- version control
+- Merge branch 'main' of https://github.com/Vansh-kap-98/release-radar-app
+- 6a
+
 ## Vansh-kap-98/release-radar-app — a1368623c82c124f226448dcda16210976f4a37d...a47fa1c1f2469776421be66862d8c84daa2c47e5
 
 ### Chores
