@@ -258,14 +258,16 @@ export async function fetchChanges({ repo, fromRef, toRef, detailed, force }) {
           current: fromRef,
           bump: "minor",
           suggested: `${prefix}${maj}.${min + 1}.0`,
-          reasoning: "2 new features — suggesting a minor version bump."
+          reasoning: "Adds two user-facing features without changing existing behaviour. (AI-recommended minor bump.)",
+          decidedBy: "ai"
         };
       })()
     : {
         current: fromRef,
         bump: null,
         suggested: null,
-        reasoning: `Could not parse a version from '${fromRef}' — expected MAJOR.MINOR.PATCH.`
+        reasoning: `Could not parse a version from '${fromRef}' — expected MAJOR.MINOR.PATCH.`,
+        decidedBy: "rules"
       };
 
   return {

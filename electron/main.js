@@ -90,7 +90,7 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
     if (!aiApiKey) throw new Error("Add an AI provider API key in Settings first.");
 
     sendStatus(event, { phase: "ai", detailed: Boolean(detailed) });
-    const changes = await classifyChanges(
+    const { changes, versionBump } = await classifyChanges(
       commits,
       // Diffs reach the prompt only in detailed mode — this is the line that
       // controls token usage, and the whole point of the toggle.
@@ -109,7 +109,7 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
     // CommonJS and Vite would not transform it for the browser bundle.
     // Advisory only: the UI pre-fills it and the user can edit before publishing.
     try {
-      result.versionSuggestion = nextVersion(fromRef, changes);
+      result.versionSuggestion = nextVersion(fromRef, changes, versionBump);
     } catch {
       result.versionSuggestion = null; // never block the flow on a suggestion
     }

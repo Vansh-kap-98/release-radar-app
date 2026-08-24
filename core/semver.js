@@ -31,7 +31,11 @@ function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-function nextVersion(currentVersionString, classifiedChanges) {
+// `aiBump` is the model's own recommendation from classifyChanges (it sees every
+// commit and diff, so it can weigh "major feature addition" in a way counting
+// categories cannot). When present and valid it WINS; the category rule below is
+// the fallback for when the model didn't answer or the call was skipped.
+function nextVersion(currentVersionString, classifiedChanges, aiBump = null) {
   const parsed = parseVersion(currentVersionString);
   if (!parsed) {
     return {
@@ -43,7 +47,8 @@ function nextVersion(currentVersionString, classifiedChanges) {
   }
 
   const changes = Array.isArray(classifiedChanges) ? classifiedChanges : [];
-  const bump = suggestBump(changes);
+  const aiDecided = Boolean(aiBump && ["major", "minor", "patch"].includes(aiBump.bump));
+  const bump = aiDecided ? aiBump.bump : suggestBump(changes);
   const breakingCount = countBy(changes, "breaking");
   const featCount = countBy(changes, "feat");
 
@@ -55,8 +60,12 @@ function nextVersion(currentVersionString, classifiedChanges) {
   // so breaking changes are expected and increment MINOR, not MAJOR. Bumping
   // 0.4.2 to 1.0.0 would silently declare the project stable — a much larger
   // claim than the change itself justifies. See semver.org clause 4.
+  // The 0.x guard applies only to the mechanical fallback. When the model has
+  // explicitly judged the release, its call is honoured as-is — overriding it
+  // here would make "the AI decides the version" quietly untrue.
   const zeroVer = major === 0;
-  const effectiveBump = bump === "major" && zeroVer ? "minor" : bump;
+  const downgradedByZeroVer = bump === "major" && zeroVer && !aiDecided;
+  const effectiveBump = downgradedByZeroVer ? "minor" : bump;
 
   if (effectiveBump === "major") {
     major += 1;
@@ -70,7 +79,11 @@ function nextVersion(currentVersionString, classifiedChanges) {
   }
 
   let reasoning;
-  if (breakingCount > 0 && zeroVer) {
+  if (aiDecided) {
+    reasoning = aiBump.reasoning
+      ? `${aiBump.reasoning} (AI-recommended ${effectiveBump} bump.)`
+      : `AI recommended a ${effectiveBump} version bump.`;
+  } else if (downgradedByZeroVer) {
     reasoning = `${plural(breakingCount, "breaking change")} detected, but this is a 0.x release — suggesting a minor bump instead of major.`;
   } else if (breakingCount > 0) {
     reasoning = `${plural(breakingCount, "breaking change")} detected — suggesting a major version bump.`;
@@ -86,7 +99,8 @@ function nextVersion(currentVersionString, classifiedChanges) {
     current: currentVersionString,
     bump: effectiveBump,
     suggested: `${prefix}${major}.${minor}.${patch}`,
-    reasoning
+    reasoning,
+    decidedBy: aiDecided ? "ai" : "rules"
   };
 }
 

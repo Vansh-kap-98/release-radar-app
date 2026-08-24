@@ -29,7 +29,7 @@ jobs:
 
       - name: Generate changelog PR
         id: changelog
-        uses: Vansh-kap-98/release-radar-app/action@v1
+        uses: Vansh-kap-98/release-radar-app@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           ai-provider: anthropic

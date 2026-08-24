@@ -18,7 +18,22 @@ Rules:
 - "docs": documentation-only changes.
 - "chore": anything else, or anything too vague to confidently classify.
 
-Never invent a change not in the input. Return ONLY valid JSON: an array of the objects above. No prose, no markdown fencing.`;
+Never invent a change not in the input.
+
+VERSION RECOMMENDATION
+Also decide the version bump for this release, as "major" | "minor" | "patch":
+- "major": a breaking change, OR a MAJOR feature addition — a significant new
+  capability, a new surface area, or an architectural shift that changes what
+  the software fundamentally does.
+- "minor": smaller new features, enhancements, and additive improvements that
+  do not change existing behaviour.
+- "patch": bug fixes, documentation, and chores only — nothing new.
+Judge the release as a whole, weighing the size of what actually changed rather
+than counting entries. One substantial new capability outranks many small fixes.
+Give a one-sentence reason a maintainer would accept.
+
+Return ONLY valid JSON, no prose and no markdown fencing, shaped exactly:
+{"changes": [ ...the objects above... ], "version": {"bump": "major|minor|patch", "reasoning": "one sentence"}}`;
 
 // PARKED (diff-aware changelog): the prompt below is the finished diff-aware
 // version — kept as a live constant rather than a commented-out block so it
@@ -69,8 +84,22 @@ Category rules:
 
 Every "sha" MUST be one of the input commit shas — never invent one. Aim to
 surface every distinct change the diffs reveal; a large refactor commit should
-not collapse into a single vague line. Return ONLY valid JSON: an array of the
-objects above. No prose, no markdown fencing.`;
+not collapse into a single vague line.
+
+VERSION RECOMMENDATION
+Also decide the version bump for this release, as "major" | "minor" | "patch":
+- "major": a breaking change, OR a MAJOR feature addition — a significant new
+  capability, a new surface area, or an architectural shift that changes what
+  the software fundamentally does.
+- "minor": smaller new features, enhancements, and additive improvements that
+  do not change existing behaviour.
+- "patch": bug fixes, documentation, and chores only — nothing new.
+Judge the release as a whole, weighing the size of what actually changed rather
+than counting entries. One substantial new capability outranks many small fixes.
+Give a one-sentence reason a maintainer would accept.
+
+Return ONLY valid JSON, no prose and no markdown fencing, shaped exactly:
+{"changes": [ ...the objects above... ], "version": {"bump": "major|minor|patch", "reasoning": "one sentence"}}`;
 
 const FORMAT_SYSTEM_PROMPT = `You are a release notes formatter. You will receive a JSON array of classified changes (title, category, optional scope) plus a repo name and range.
 
@@ -273,6 +302,10 @@ function stripCodeFence(text) {
 // `fileContext` is the summarized, truncated diff from github.js. Callers
 // pass it only when the user enables "detailed analysis" — passing null keeps
 // the original, cheap, commit-messages-only behavior byte for byte.
+//
+// Returns { changes, versionBump }. The version bump is decided by the model in
+// this SAME call — it already has every commit and diff in front of it, so the
+// recommendation costs no extra request and no extra rate-limit budget.
 async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry }) {
   let system = CLASSIFY_SYSTEM_PROMPT;
   let payload = commits;
@@ -321,13 +354,29 @@ async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry
     throw new Error("AI classification response wasn't valid JSON — try again.");
   }
 
-  if (!Array.isArray(parsed)) {
-    throw new Error("AI classification response wasn't a JSON array — try again.");
+  // The prompt asks for {changes, version}, but models sometimes answer with a
+  // bare array. Accept both rather than failing a whole run over the wrapper.
+  const entries = Array.isArray(parsed) ? parsed : parsed && parsed.changes;
+  if (!Array.isArray(entries)) {
+    throw new Error("AI classification response wasn't in the expected shape — try again.");
   }
 
   // Guardrail: every entry must trace back to a real commit in the range.
   const knownShas = new Set(commits.map((c) => c.sha));
-  return parsed.filter((entry) => entry && knownShas.has(entry.sha));
+  const changes = entries.filter((entry) => entry && knownShas.has(entry.sha));
+
+  // The model's own bump call. Only accepted when it is one of the three valid
+  // values — anything else falls back to the deterministic rule in semver.js.
+  let versionBump = null;
+  const v = !Array.isArray(parsed) && parsed ? parsed.version : null;
+  if (v && ["major", "minor", "patch"].includes(v.bump)) {
+    versionBump = {
+      bump: v.bump,
+      reasoning: typeof v.reasoning === "string" ? v.reasoning.trim().slice(0, 300) : ""
+    };
+  }
+
+  return { changes, versionBump };
 }
 
 async function formatReleaseNotes(changes, repo, range, { provider, apiKey, onRetry }) {

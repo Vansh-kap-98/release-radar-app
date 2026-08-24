@@ -101,7 +101,7 @@ async function run() {
   }
   log(`Found ${commits.length} commit(s). Classifying with ${provider}${detailed ? " (detailed)" : ""}...`);
 
-  const changes = await classifyChanges(commits, detailed ? fileContext : null, {
+  const { changes, versionBump } = await classifyChanges(commits, detailed ? fileContext : null, {
     provider,
     apiKey: aiApiKey,
     onRetry: ({ provider: p, attempt, maxRetries, waitMs }) =>
@@ -122,7 +122,7 @@ async function run() {
   // Same suggestion logic as the desktop app (core/semver.js) — derived from
   // the classification, no extra AI call. Advisory: it annotates the PR, it
   // does not tag anything.
-  const suggestion = nextVersion(fromRef, changes);
+  const suggestion = nextVersion(fromRef, changes, versionBump);
   if (suggestion.suggested) {
     log(`Suggested next version: ${suggestion.suggested} (${suggestion.bump}) — ${suggestion.reasoning}`);
     setOutput("suggested-version", suggestion.suggested);

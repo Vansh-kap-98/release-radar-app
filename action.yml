@@ -1,5 +1,5 @@
 name: "Release Radar Changelog"
-description: "Classify a commit range with AI and open a changelog pull request automatically."
+description: "Turn a commit range into a categorized changelog with AI, and open it as a pull request."
 author: "Vansh Kapoor"
 
 branding:
@@ -50,4 +50,4 @@ outputs:
 
 runs:
   using: "node20"
-  main: "index.js"
+  main: "action/index.js"

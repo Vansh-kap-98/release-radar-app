@@ -449,6 +449,11 @@ export default function GenerateTab({ onSaved, prefill }) {
               {hasSuggestion
                 ? `Suggested next version: ${suggestion.suggested} (${suggestion.bump} bump)`
                 : "No version suggestion available"}
+              {hasSuggestion && suggestion.decidedBy ? (
+                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                  {suggestion.decidedBy === "ai" ? "· chosen by AI" : "· from category rules"}
+                </span>
+              ) : null}
             </h2>
             {suggestion?.reasoning ? (
               <p className="text-[12px] text-muted-foreground">{suggestion.reasoning}</p>

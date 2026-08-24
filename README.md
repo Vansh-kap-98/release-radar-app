@@ -120,6 +120,31 @@ which will exhaust a free-tier key quickly. The payload is bounded regardless:
 After a detailed run the UI reports exactly what was sent ("sent 12 files,
 34.2k chars of diff") so the token cost is never a black box.
 
+## Version suggestions
+
+The AI decides the version bump as part of the **same** classification call — it
+already has every commit and diff in front of it, so the recommendation costs no
+extra request and no extra rate-limit budget. The scheme is:
+
+- **MAJOR (x)** — a breaking change, or a major feature addition: significant new
+  capability, new surface area, architectural shift
+- **MINOR (y)** — smaller features, enhancements, additive improvements
+- **PATCH (z)** — bug fixes, docs and chores only
+
+Note this deliberately differs from strict semver, which ties MAJOR to breaking
+changes alone; here a large feature addition also earns a major bump.
+
+If the model doesn't return a usable bump (older response shape, invalid value,
+call skipped), `core/semver.js` falls back to a deterministic category rule —
+breaking → major, feat → minor, else patch — and that fallback additionally
+applies the semver 0.x guard (a breaking change on 0.4.2 suggests 0.5.0 rather
+than 1.0.0). The guard is deliberately NOT applied to an explicit AI decision,
+since overriding the model would make "the AI decides" untrue. The UI labels
+which path produced the number ("chosen by AI" / "from category rules").
+
+The suggestion is always advisory: it pre-fills an editable field and is never
+applied without you confirming it.
+
 ## AI providers
 
 Four are supported, chosen in Settings: **Anthropic** (Claude), **OpenAI**,
