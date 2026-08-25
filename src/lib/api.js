@@ -278,10 +278,10 @@ export async function fetchChanges({ repo, fromRef, toRef, detailed, force }) {
     ...(detailed
       ? {
           diffStats: {
-            filesAnalyzed: 12,
+            filesIncluded: 12,
             filesOmitted: 3,
             filesWithoutPatch: 1,
-            patchChars: 34210,
+            totalDiffChars: 34210,
           },
         }
       : {}),

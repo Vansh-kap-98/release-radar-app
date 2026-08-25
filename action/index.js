@@ -19,9 +19,15 @@ const {
 } = require("../core");
 
 function getInput(name, fallback = "") {
-  // The runner exposes `with:` values as INPUT_<NAME>, uppercased, spaces->_.
-  const value = process.env[`INPUT_${name.toUpperCase().replace(/[- ]/g, "_")}`];
-  return (value ?? "").trim() || fallback;
+  // The runner exposes `with:` values as INPUT_<NAME>: the name is uppercased
+  // and SPACES become underscores, but hyphens are preserved — GitHub's own
+  // example is `num-octocats` -> INPUT_NUM-OCTOCATS. Getting this wrong makes
+  // every hyphenated input read as empty on a real runner.
+  const canonical = process.env[`INPUT_${name.toUpperCase().replace(/ /g, "_")}`];
+  // Underscore form kept as a fallback: harmless, and tolerates a caller that
+  // sets the variable by hand.
+  const underscored = process.env[`INPUT_${name.toUpperCase().replace(/[- ]/g, "_")}`];
+  return ((canonical ?? underscored) ?? "").trim() || fallback;
 }
 
 function setOutput(name, value) {
@@ -41,6 +47,11 @@ function fail(message) {
   process.exitCode = 1;
 }
 
+// 34231 -> "34.2k". Same readable form the desktop app uses.
+function formatChars(n) {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
 function summarize(markdown) {
   const file = process.env.GITHUB_STEP_SUMMARY;
   if (file && markdown) fs.appendFileSync(file, `${markdown}\n`);
@@ -50,7 +61,10 @@ async function run() {
   const githubToken = getInput("github-token");
   const aiApiKey = getInput("ai-api-key");
   const provider = getInput("ai-provider", "anthropic");
-  const detailed = getInput("detailed", "false").toLowerCase() === "true";
+  // `detailed-analysis` is the documented long form; `detailed` is kept as an
+  // accepted alias so existing workflows don't break.
+  const detailed =
+    (getInput("detailed-analysis") || getInput("detailed", "false")).toLowerCase() === "true";
   const publishTarget = getInput("publish-target", "pull-request");
 
   if (!githubToken) return fail("github-token is required.");
@@ -101,7 +115,7 @@ async function run() {
   }
   log(`Found ${commits.length} commit(s). Classifying with ${provider}${detailed ? " (detailed)" : ""}...`);
 
-  const { changes, versionBump } = await classifyChanges(commits, detailed ? fileContext : null, {
+  const { changes, versionBump, diffMeta } = await classifyChanges(commits, detailed ? fileContext : null, {
     provider,
     apiKey: aiApiKey,
     onRetry: ({ provider: p, attempt, maxRetries, waitMs }) =>
@@ -117,6 +131,18 @@ async function run() {
 
   setOutput("markdown", markdown);
   setOutput("skipped", "false");
+
+  // CI has no interactive UI, so the "what did detailed mode actually send"
+  // report goes to the run's step summary and the log instead.
+  if (diffMeta) {
+    const omitted = diffMeta.filesOmitted > 0 ? ` (${diffMeta.filesOmitted} omitted)` : "";
+    const line = `Detailed analysis: sent ${diffMeta.filesIncluded} file${diffMeta.filesIncluded === 1 ? "" : "s"}, ${formatChars(diffMeta.totalDiffChars)} characters of diff${omitted}.`;
+    log(line);
+    setOutput("diff-files-sent", String(diffMeta.filesIncluded));
+    setOutput("diff-chars-sent", String(diffMeta.totalDiffChars));
+    summarize(`_${line}_`);
+  }
+
   summarize(markdown);
 
   // Same suggestion logic as the desktop app (core/semver.js) — derived from

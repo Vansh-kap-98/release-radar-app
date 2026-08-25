@@ -24,8 +24,12 @@ inputs:
   to-ref:
     description: "End of the range. Defaults to the pushed tag, or the default branch."
     required: false
+  detailed-analysis:
+    description: "Send file diffs to the AI so vague commit messages still produce accurate entries. Adds roughly 10-20k input tokens per run - leave off unless your key has the headroom."
+    required: false
+    default: "false"
   detailed:
-    description: "Send file diffs to the AI for richer descriptions. Uses far more tokens."
+    description: "Deprecated alias for detailed-analysis. Kept so existing workflows keep working."
     required: false
     default: "false"
   publish-target:
@@ -47,6 +51,10 @@ outputs:
     description: "URL of the created pull request or draft release, when one was made."
   skipped:
     description: "true when there was nothing to do (e.g. no previous tag, or no commits in range)."
+  diff-files-sent:
+    description: "Detailed analysis only: how many files' diffs were sent to the AI."
+  diff-chars-sent:
+    description: "Detailed analysis only: total characters of diff sent to the AI."
 
 runs:
   using: "node20"

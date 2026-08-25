@@ -303,19 +303,31 @@ function stripCodeFence(text) {
 // pass it only when the user enables "detailed analysis" — passing null keeps
 // the original, cheap, commit-messages-only behavior byte for byte.
 //
-// Returns { changes, versionBump }. The version bump is decided by the model in
-// this SAME call — it already has every commit and diff in front of it, so the
-// recommendation costs no extra request and no extra rate-limit budget.
+// Returns { changes, versionBump, diffMeta }. The version bump is decided by the
+// model in this SAME call — it already has every commit and diff in front of it,
+// so the recommendation costs no extra request and no extra rate-limit budget.
+//
+// `diffMeta` reports what was actually sent in detailed mode
+// ({ filesIncluded, filesOmitted, filesWithoutPatch, totalDiffChars }) and is
+// null otherwise. It is computed here rather than by each caller so the desktop
+// app and the GitHub Action report identical numbers from one implementation.
 async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry }) {
   let system = CLASSIFY_SYSTEM_PROMPT;
   let payload = commits;
   let maxTokens = 2000;
+  let diffMeta = null;
 
   if (fileContext) {
     const { files = [], omittedFileCount = 0, responseCapped = false } = fileContext;
 
     system = CLASSIFY_SYSTEM_PROMPT_DIFF_AWARE;
     maxTokens = 8000;
+    diffMeta = {
+      filesIncluded: files.length,
+      filesOmitted: omittedFileCount,
+      filesWithoutPatch: files.filter((f) => !f.patch).length,
+      totalDiffChars: files.reduce((n, f) => n + (f.patch?.length ?? 0), 0)
+    };
     payload = {
       commits,
       files,
@@ -376,7 +388,7 @@ async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry
     };
   }
 
-  return { changes, versionBump };
+  return { changes, versionBump, diffMeta };
 }
 
 async function formatReleaseNotes(changes, repo, range, { provider, apiKey, onRetry }) {

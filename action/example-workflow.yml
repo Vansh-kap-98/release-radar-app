@@ -35,9 +35,11 @@ jobs:
           ai-provider: anthropic
           ai-api-key: ${{ secrets.AI_API_KEY }}
           publish-target: pull-request
-          # Set to true for richer descriptions built from file diffs.
-          # Costs far more tokens — needs a paid or higher-limit key.
-          detailed: "false"
+          # Set to "true" for richer descriptions built from file diffs.
+          # Adds roughly 10-20k input tokens per run — needs a paid or
+          # higher-limit key. The run's step summary reports exactly how
+          # many files and characters were sent.
+          detailed-analysis: "false"
 
       - name: Show result
         if: steps.changelog.outputs.skipped != 'true'

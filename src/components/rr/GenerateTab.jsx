@@ -421,10 +421,11 @@ export default function GenerateTab({ onSaved, prefill }) {
             </div>
             {result.diffStats ? (
               <p className="mb-2 text-[12px] text-muted-foreground">
-                Detailed analysis: sent {result.diffStats.filesAnalyzed} files (
-                {formatChars(result.diffStats.patchChars)} chars of diff)
+                Sent {result.diffStats.filesIncluded} file
+                {result.diffStats.filesIncluded === 1 ? "" : "s"},{" "}
+                {formatChars(result.diffStats.totalDiffChars)} characters of diff
                 {result.diffStats.filesOmitted
-                  ? `, ${result.diffStats.filesOmitted} omitted`
+                  ? ` (${result.diffStats.filesOmitted} file${result.diffStats.filesOmitted === 1 ? "" : "s"} omitted)`
                   : ""}
               </p>
             ) : null}

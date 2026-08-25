@@ -90,7 +90,7 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
     if (!aiApiKey) throw new Error("Add an AI provider API key in Settings first.");
 
     sendStatus(event, { phase: "ai", detailed: Boolean(detailed) });
-    const { changes, versionBump } = await classifyChanges(
+    const { changes, versionBump, diffMeta } = await classifyChanges(
       commits,
       // Diffs reach the prompt only in detailed mode — this is the line that
       // controls token usage, and the whole point of the toggle.
@@ -116,15 +116,9 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
 
     // Report what the diffs actually contributed, so "detailed mode" isn't a
     // black box — and so an empty/failed diff payload is visible rather than
-    // silently producing toggle-off-quality output.
-    if (detailed && fileContext) {
-      result.diffStats = {
-        filesAnalyzed: fileContext.files.length,
-        filesOmitted: fileContext.omittedFileCount,
-        filesWithoutPatch: fileContext.files.filter((f) => !f.patch).length,
-        patchChars: fileContext.files.reduce((n, f) => n + (f.patch?.length ?? 0), 0)
-      };
-    }
+    // silently producing toggle-off-quality output. Computed in core/ai.js so
+    // the Action reports the same numbers from the same code.
+    if (diffMeta) result.diffStats = diffMeta;
 
     classificationCache.set(key, result);
     return result;

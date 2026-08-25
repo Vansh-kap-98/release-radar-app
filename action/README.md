@@ -26,7 +26,7 @@ from the Release Radar desktop app, where the key never leaves your computer.
 Concretely, when you use this action:
 
 - your key sits in GitHub's secret store, decrypted into a runner at job time
-- your commit messages (and, with `detailed: true`, your code diffs) are sent
+- your commit messages (and, with `detailed-analysis: "true"`, your code diffs) are sent
   from GitHub's infrastructure to your AI provider
 - anyone who can push a workflow change to this repository can potentially
   arrange for that secret to be used
@@ -75,9 +75,9 @@ jobs:
           ai-provider: anthropic
           ai-api-key: ${{ secrets.AI_API_KEY }}
           publish-target: pull-request
-          # Set to true for richer descriptions built from file diffs.
-          # Costs far more tokens — needs a paid or higher-limit key.
-          detailed: "false"
+          # Set to "true" for richer descriptions built from file diffs.
+          # Adds roughly 10-20k input tokens per run — see "Detailed analysis".
+          detailed-analysis: "false"
 
       - name: Show result
         if: steps.changelog.outputs.skipped != 'true'
@@ -99,11 +99,12 @@ the pull request.
 | `ai-provider` | string | no | `anthropic` | One of `anthropic`, `openai`, `groq`, `google`. |
 | `from-ref` | string | no | previous tag | Start of the range. Defaults to the tag before the one being released. |
 | `to-ref` | string | no | pushed tag | End of the range. Defaults to the pushed tag, or the repository's default branch. |
-| `detailed` | string | no | `"false"` | `"true"` sends file diffs to the AI for richer descriptions. Adds roughly 10–20k input tokens per run — needs a paid or higher-limit key. |
+| `detailed-analysis` | string | no | `"false"` | `"true"` sends file diffs to the AI, so vague commit messages ("fix stuff", "wip") still produce accurate entries. Adds roughly **10–20k input tokens per run** — enough to exhaust a free-tier key in one request. See [Detailed analysis](#detailed-analysis) below. |
+| `detailed` | string | no | `"false"` | Deprecated alias for `detailed-analysis`. |
 | `publish-target` | string | no | `pull-request` | `pull-request`, `github-release` (creates a **draft** release), or `markdown-only` (writes nothing back). |
 | `version` | string | no | pushed tag | Version label for the PR title and branch name. |
 
-All inputs are strings — YAML booleans must be quoted (`detailed: "true"`).
+All inputs are strings — YAML booleans must be quoted (`detailed-analysis: "true"`).
 
 ## Outputs
 
@@ -114,10 +115,45 @@ All inputs are strings — YAML booleans must be quoted (`detailed: "true"`).
 | `suggested-bump` | `major`, `minor`, or `patch`. Empty when no suggestion was possible. |
 | `published-url` | URL of the created pull request or draft release, when one was made. |
 | `skipped` | `true` when there was nothing to do — no previous tag, or no commits in range. |
+| `diff-files-sent` | Detailed analysis only: how many files' diffs were sent to the AI. |
+| `diff-chars-sent` | Detailed analysis only: total characters of diff sent to the AI. |
 
 Reference them as `steps.<id>.outputs.<name>` (the step needs an `id`).
 
 ---
+
+## Detailed analysis
+
+Off by default. With `detailed-analysis: "true"` the action also sends GitHub's
+file diffs to the AI, so a commit message like `fix stuff` still yields an
+accurate changelog entry describing what actually changed.
+
+**The tradeoff is cost.** Diffs add roughly **10–20k input tokens per run** —
+enough to blow through a free-tier key's rate limit in a single request. Leave
+it off unless your key has the headroom.
+
+The payload is bounded no matter how large the underlying diff is:
+
+- lockfiles, build output, minified bundles and vendored code are listed by
+  name only and consume **zero** diff budget — one regenerated lockfile would
+  otherwise crowd out every real change
+- real source files are ranked ahead of generated files regardless of size
+- each patch is capped at 200 lines or 3000 characters, cut on a hunk (`@@`)
+  boundary so what's included stays readable
+- at most 30 files, with the omitted count reported
+- a hard ceiling of 60,000 characters across all patches combined, split across
+  the files that will use it so one big file can't starve the rest
+- binary files and pure renames are described by name and status, never invented
+
+Because a CI run has no interactive UI, the action reports what it actually
+sent to the workflow's **step summary** and log, for example:
+
+```
+Detailed analysis: sent 12 files, 34.2k characters of diff (3 omitted).
+```
+
+The same numbers are available as the `diff-files-sent` and `diff-chars-sent`
+outputs.
 
 ## Behaviour worth knowing
 
