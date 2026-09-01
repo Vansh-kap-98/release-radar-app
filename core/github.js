@@ -108,13 +108,15 @@ function summarizeFiles(rawFiles) {
   const all = rawFiles ?? [];
   const responseCapped = all.length >= GITHUB_FILE_CAP;
 
+  // Defensive: a malformed entry should not take down a whole run.
+  const usable = all.filter((f) => f && typeof f.filename === "string");
   const byChanges = (a, b) => (b.changes ?? 0) - (a.changes ?? 0);
-  const source = all.filter((f) => !isGeneratedFile(f.filename)).sort(byChanges);
-  const generated = all.filter((f) => isGeneratedFile(f.filename)).sort(byChanges);
+  const source = usable.filter((f) => !isGeneratedFile(f.filename)).sort(byChanges);
+  const generated = usable.filter((f) => isGeneratedFile(f.filename)).sort(byChanges);
 
   // Source first, so a huge lockfile can never displace a real code change.
   const selected = [...source, ...generated].slice(0, MAX_FILES);
-  const omittedFileCount = all.length - selected.length;
+  const omittedFileCount = usable.length - selected.length;
 
   let budget = TOTAL_PATCH_BUDGET;
   const patchable = selected.filter((f) => f.patch && !isGeneratedFile(f.filename)).length;
@@ -202,10 +204,23 @@ async function fetchChangeRange({ repo, fromRef, toRef, githubToken }) {
     return { commits: [], fileContext: null, empty: true };
   }
 
+  // The Compare API returns at most 250 commits but reports the real total
+  // separately. Without this check a 400-commit range silently produces a
+  // changelog covering only the first 250 — output that looks complete and
+  // isn't, which is the worst failure mode for a changelog tool.
+  const totalCommits = typeof data.total_commits === "number" ? data.total_commits : commits.length;
+  const commitsTruncated = totalCommits > commits.length;
+
   // The compare response already carries `files`, so summarizing costs no
   // extra API call. Whether this reaches the AI prompt (and burns tokens) is
   // decided by the caller's "detailed analysis" toggle, not here.
-  return { commits, fileContext: summarizeFiles(data.files), empty: false };
+  return {
+    commits,
+    fileContext: summarizeFiles(data.files),
+    empty: false,
+    totalCommits,
+    commitsTruncated
+  };
 }
 
 // Feature 1: visual commit picker. Lists commits on a branch (paginated via

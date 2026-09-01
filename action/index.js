@@ -107,13 +107,26 @@ async function run() {
   const range = `${fromRef}...${toRef}`;
   log(`Comparing ${range} in ${repo}`);
 
-  const { commits, fileContext, empty } = await fetchChangeRange({ repo, fromRef, toRef, githubToken });
+  const { commits, fileContext, empty, totalCommits, commitsTruncated } =
+    await fetchChangeRange({ repo, fromRef, toRef, githubToken });
   if (empty) {
     log(`No commits between ${fromRef} and ${toRef}. Skipping.`);
     setOutput("skipped", "true");
     return;
   }
   log(`Found ${commits.length} commit(s). Classifying with ${provider}${detailed ? " (detailed)" : ""}...`);
+
+  // GitHub's compare endpoint caps at 250 commits — warn rather than emit a
+  // changelog that silently covers only part of the range.
+  if (commitsTruncated) {
+    const warning = `Only the ${commits.length} most recent of ${totalCommits} commits were analyzed - GitHub's compare API caps a range at 250. Split the range into smaller releases for a complete changelog.`;
+    process.stdout.write(`::warning::${warning}
+`);
+    setOutput("range-truncated", "true");
+    summarize(`> **Incomplete range.** ${warning}`);
+  } else {
+    setOutput("range-truncated", "false");
+  }
 
   const { changes, versionBump, diffMeta } = await classifyChanges(commits, detailed ? fileContext : null, {
     provider,

@@ -43,6 +43,8 @@ const CLASSIFY_SYSTEM_PROMPT_DIFF_AWARE = `You are a changelog classification en
 - "commits": an array of commits (sha, message, author) for the whole range.
 - "files": an array of file-level changes for the whole range (filename, status, additions, deletions, and usually a truncated unified diff "patch"). Some entries have no patch and carry a "note" instead.
 - "diffCoverage": metadata about what was left out of "files".
+- "commitCoverage" (when present): says the commit list itself is incomplete. If
+  it is present, do NOT describe the result as the complete set of changes.
 
 The commits and files are NOT paired one-to-one — the files describe the aggregate diff across the whole range. Use them together.
 
@@ -311,7 +313,7 @@ function stripCodeFence(text) {
 // ({ filesIncluded, filesOmitted, filesWithoutPatch, totalDiffChars }) and is
 // null otherwise. It is computed here rather than by each caller so the desktop
 // app and the GitHub Action report identical numbers from one implementation.
-async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry }) {
+async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry } = {}) {
   let system = CLASSIFY_SYSTEM_PROMPT;
   let payload = commits;
   let maxTokens = 2000;
@@ -391,7 +393,7 @@ async function classifyChanges(commits, fileContext, { provider, apiKey, onRetry
   return { changes, versionBump, diffMeta };
 }
 
-async function formatReleaseNotes(changes, repo, range, { provider, apiKey, onRetry }) {
+async function formatReleaseNotes(changes, repo, range, { provider, apiKey, onRetry } = {}) {
   const raw = await callModel({
     provider,
     apiKey,

@@ -419,6 +419,14 @@ export default function GenerateTab({ onSaved, prefill }) {
                 </span>
               ) : null}
             </div>
+            {result.rangeTruncated ? (
+              <p className="mb-2 rounded-md border border-cat-breaking/40 bg-cat-breaking-bg/40 p-2 text-[12px]">
+                Only the {result.rangeTruncated.commitsAnalyzed} most recent of{" "}
+                {result.rangeTruncated.totalCommits} commits were analyzed — GitHub's
+                compare API caps a range at 250. Split the range into smaller
+                releases for a complete changelog.
+              </p>
+            ) : null}
             {result.diffStats ? (
               <p className="mb-2 text-[12px] text-muted-foreground">
                 Sent {result.diffStats.filesIncluded} file

@@ -82,7 +82,8 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
 
   try {
     sendStatus(event, { phase: "github" });
-    const { commits, fileContext, empty } = await fetchChangeRange({ repo, fromRef, toRef, githubToken });
+    const { commits, fileContext, empty, totalCommits, commitsTruncated } =
+      await fetchChangeRange({ repo, fromRef, toRef, githubToken });
     if (empty) return { changes: [], empty: true };
 
     const aiProvider = getSecret("aiProvider") || "anthropic";
@@ -103,6 +104,12 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
     );
 
     const result = { changes, empty: false };
+
+    // GitHub's compare endpoint caps at 250 commits. Say so loudly rather than
+    // hand back a changelog that silently covers only part of the range.
+    if (commitsTruncated) {
+      result.rangeTruncated = { commitsAnalyzed: commits.length, totalCommits };
+    }
 
     // Version suggestion is derived from the classification we already have —
     // no extra AI call. Computed here (not in the renderer) because core/ is
