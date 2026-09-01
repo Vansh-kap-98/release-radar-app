@@ -25,7 +25,7 @@ This starts the Vite dev server and Electron together with hot reload.
 ```bash
 npm test
 ```
-478 assertions across 12 suites, no test framework and no dev dependencies —
+554 assertions across 14 suites, no test framework and no dev dependencies —
 plain Node scripts, matching `core/`'s dependency-free constraint. They mock
 `fetch` and the Electron APIs, so nothing hits a real API or needs a key.
 
@@ -117,7 +117,7 @@ release-radar-app/
 │   ├── lib/               # api (IPC bridge + mocks), semver, rr-utils, utils
 │   └── components/rr/     # App shell, GenerateTab, HistoryTab, SettingsTab,
 │                          # CommitPicker, ui primitives
-├── test/                  # 478 assertions, `npm test`, no framework
+├── test/                  # 554 assertions, `npm test`, no framework
 ├── .github/workflows/
 │   ├── test.yml           # runs the suites on every push/PR
 │   └── release-action.yml # moves the floating v1 tag (repo maintenance)

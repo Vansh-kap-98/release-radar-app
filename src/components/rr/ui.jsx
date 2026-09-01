@@ -1,4 +1,5 @@
-import { AlertCircle, Info, Loader2 } from "lucide-react";
+import { Children, isValidElement, useEffect, useId, useMemo, useRef, useState } from "react";
+import { AlertCircle, Check, ChevronsUpDown, Info, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /*
@@ -95,11 +96,276 @@ export function Input({ className, ...props }) {
   return <input className={cn(FIELD_BASE, "border-input", className)} {...props} />;
 }
 
-export function Select({ className, children, ...props }) {
+/**
+ * Select — a hand-rolled listbox, not a native <select>.
+ *
+ * WHY: a native select's collapsed box is styleable, but its OPEN menu is
+ * drawn by the OS on Windows and Linux and cannot be themed at all. In a dark
+ * app, clicking the control pops a light system menu — the same class of
+ * problem as the native title bar and scrollbars this change replaced.
+ *
+ * COST: everything a native select gives away free has to be rebuilt, and is,
+ * below — keyboard navigation, typeahead, ARIA wiring, click-outside. What is
+ * NOT rebuilt is the OS-level handling a native control gets on mobile and in
+ * some assistive tech. This is a desktop Electron app, so that trade lands
+ * well here; it would not on a public web form.
+ *
+ * The props contract is deliberately identical to the native version — `value`,
+ * an `onChange` receiving an event-like `{ target: { value } }`, and <option>
+ * children — so no call site changed, and reverting to a native <select> stays
+ * a single-component edit.
+ */
+export function Select({
+  className,
+  children,
+  value,
+  onChange,
+  id,
+  disabled,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
+  ...props
+}) {
+  const reactId = useId();
+  const listboxId = `${id || reactId}-listbox`;
+
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [dropUp, setDropUp] = useState(false);
+
+  const wrapperRef = useRef(null);
+  const triggerRef = useRef(null);
+  const listRef = useRef(null);
+  const typeahead = useRef({ buffer: "", timer: null });
+
+  // Read the <option> children into plain data, so callers can keep passing
+  // the same JSX they passed the native element, including arrays from .map().
+  const options = useMemo(() => {
+    const flatten = (nodes) =>
+      Children.toArray(nodes).flatMap((child) => {
+        if (!isValidElement(child)) return [];
+        if (child.type === "option") {
+          const label = Children.toArray(child.props.children).join("");
+          return [
+            {
+              value: String(child.props.value ?? label),
+              label,
+              disabled: Boolean(child.props.disabled),
+            },
+          ];
+        }
+        return flatten(child.props.children);
+      });
+    return flatten(children);
+  }, [children]);
+
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+  const selected = options[selectedIndex];
+
+  const commit = (index) => {
+    const option = options[index];
+    if (!option || option.disabled) return;
+    setOpen(false);
+    // Event-shaped so existing `(e) => ...e.target.value` handlers still work.
+    if (option.value !== value) onChange?.({ target: { value: option.value } });
+    triggerRef.current?.focus();
+  };
+
+  const openMenu = (startIndex = selectedIndex) => {
+    if (disabled) return;
+    // Flip upward when there is not enough room below, otherwise the menu is
+    // clipped by the window edge and the last options cannot be reached.
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) setDropUp(window.innerHeight - rect.bottom < 240 && rect.top > 240);
+    setActiveIndex(startIndex);
+    setOpen(true);
+  };
+
+  // Close on any pointer press outside the control.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event) => {
+      if (!wrapperRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  // Keep the active option in view when arrowing through a long list.
+  useEffect(() => {
+    if (!open) return;
+    listRef.current
+      ?.querySelector(`[data-index="${activeIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [open, activeIndex]);
+
+  const step = (delta) => {
+    setActiveIndex((current) => {
+      const count = options.length;
+      let next = current;
+      for (let i = 0; i < count; i++) {
+        next = (next + delta + count) % count;
+        if (!options[next]?.disabled) return next;
+      }
+      return current;
+    });
+  };
+
+  // Jump to the first option starting with what was typed, the way a native
+  // select does. The buffer clears after a pause, so "an" then "op" both work.
+  const onTypeahead = (key) => {
+    const state = typeahead.current;
+    state.buffer += key.toLowerCase();
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      state.buffer = "";
+    }, 600);
+
+    const match = options.findIndex(
+      (o) => !o.disabled && o.label.toLowerCase().startsWith(state.buffer),
+    );
+    if (match === -1) return;
+    if (open) setActiveIndex(match);
+    else commit(match);
+  };
+
+  const isPrintable = (event) =>
+    event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+
+  const onKeyDown = (event) => {
+    if (disabled) return;
+
+    if (!open) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        openMenu();
+      } else if (isPrintable(event)) {
+        event.preventDefault();
+        onTypeahead(event.key);
+      }
+      return;
+    }
+
+    switch (event.key) {
+      case "Escape":
+        event.preventDefault();
+        setOpen(false);
+        triggerRef.current?.focus();
+        break;
+      case "Enter":
+      case " ":
+        event.preventDefault();
+        commit(activeIndex);
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        step(1);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        step(-1);
+        break;
+      case "Home":
+        event.preventDefault();
+        setActiveIndex(options.findIndex((o) => !o.disabled));
+        break;
+      case "End":
+        event.preventDefault();
+        setActiveIndex(options.length - 1);
+        break;
+      case "Tab":
+        // Commit and move on, matching native behaviour.
+        commit(activeIndex);
+        break;
+      default:
+        if (isPrintable(event)) {
+          event.preventDefault();
+          onTypeahead(event.key);
+        }
+    }
+  };
+
   return (
-    <select className={cn(FIELD_BASE, "border-input cursor-pointer pr-7", className)} {...props}>
-      {children}
-    </select>
+    <div ref={wrapperRef} className={cn("relative", className)}>
+      <button
+        ref={triggerRef}
+        id={id}
+        type="button"
+        // ARIA 1.2 select-only combobox: a button owning a listbox, with the
+        // active option pointed at by aria-activedescendant rather than focus.
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listboxId : undefined}
+        aria-activedescendant={open ? `${listboxId}-${activeIndex}` : undefined}
+        aria-labelledby={ariaLabelledBy}
+        aria-describedby={ariaDescribedBy}
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={onKeyDown}
+        className={cn(FIELD_BASE, "border-input flex cursor-pointer items-center gap-2 text-left")}
+        {...props}
+      >
+        <span className="min-w-0 flex-1 truncate">{selected?.label ?? ""}</span>
+        <ChevronsUpDown className="size-3.5 shrink-0 text-subtle-foreground" aria-hidden="true" />
+      </button>
+
+      {open ? (
+        <ul
+          ref={listRef}
+          id={listboxId}
+          role="listbox"
+          aria-labelledby={ariaLabelledBy}
+          tabIndex={-1}
+          className={cn(
+            "absolute z-50 max-h-60 w-full overflow-y-auto",
+            // A step up in elevation and radius from the trigger, so it reads
+            // as floating above the form rather than welded to it.
+            "rounded-lg border border-border-strong bg-elevated p-1 shadow-md",
+            dropUp ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+        >
+          {options.map((option, index) => {
+            const isSelected = option.value === value;
+            const isActive = index === activeIndex;
+            return (
+              <li
+                key={option.value}
+                id={`${listboxId}-${index}`}
+                data-index={index}
+                role="option"
+                aria-selected={isSelected}
+                aria-disabled={option.disabled || undefined}
+                // mousedown, not click: click fires after the document-level
+                // mousedown that closes the menu, so the selection is lost.
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  commit(index);
+                }}
+                onMouseEnter={() => !option.disabled && setActiveIndex(index)}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground",
+                  option.disabled && "cursor-not-allowed opacity-50",
+                  isActive && !option.disabled && "bg-hover",
+                )}
+              >
+                <Check
+                  className={cn(
+                    "size-3.5 shrink-0 text-accent",
+                    isSelected ? "opacity-100" : "opacity-0",
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -118,15 +384,32 @@ export function Label({ className, ...props }) {
  * tighter still beneath it (4px), and the gap to the NEXT field is the one
  * that's large. That proximity is what makes a long form scannable.
  */
-export function Field({ label, htmlFor, hint, error, badge, children, className }) {
+export function Field({
+  label,
+  htmlFor,
+  hint,
+  error,
+  badge,
+  children,
+  className,
+  // `false` when the control is a button rather than a real form element —
+  // Select, for instance. A <label for> does not activate a button, so those
+  // fields expose the text through aria-labelledby instead of pretending.
+  labelable = true,
+}) {
   const describedBy = error ? `${htmlFor}-error` : hint ? `${htmlFor}-hint` : undefined;
+  const LabelTag = labelable ? Label : "span";
   return (
     <div className={cn("space-y-1.5", className)}>
       {label ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Label htmlFor={htmlFor} className="mb-0">
+          <LabelTag
+            id={`${htmlFor}-label`}
+            htmlFor={labelable ? htmlFor : undefined}
+            className={cn("mb-0", !labelable && "block text-xs font-medium text-foreground")}
+          >
             {label}
-          </Label>
+          </LabelTag>
           {badge}
         </div>
       ) : null}

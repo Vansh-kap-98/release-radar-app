@@ -1,10 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("fs/promises");
 const { getSecret, setSecret, getAll } = require("./lib/store");
 // Pipeline logic lives in ../core (no Electron dependency) so the same code
 // can run in the desktop app and in the companion GitHub Action.
-const { fetchChangeRange, listCommits, getRepoDefaults } = require("../core/github");
+const { fetchChangeRange, listCommits, getRepoDefaults, webBase } = require("../core/github");
 const { classifyChanges, formatReleaseNotes } = require("../core/ai");
 const { nextVersion } = require("../core/semver");
 const { markdownToHtml, markdownToPlainText } = require("../core/export");
@@ -17,16 +17,90 @@ const isDev = process.env.NODE_ENV === "development";
 // inside core/, so reading it here changes nothing for existing users.
 const githubApiBaseUrl = () => getSecret("githubApiBaseUrl") || "";
 
+// --- "Generate a token" deep link ----------------------------------------
+//
+// GitHub's classic-PAT creation page accepts `description` and `scopes` query
+// params and pre-fills the form from them. That is all it does: there is no
+// parameter that returns the generated token to us, so the user still has to
+// copy it off GitHub's page and paste it into Settings. (Getting a token back
+// programmatically is what OAuth Device Flow is for — a separate mechanism,
+// independent of this one.)
+//
+// Classic rather than fine-grained on purpose: a fine-grained token's
+// repository selection is a manual picker with no URL equivalent, so a
+// fine-grained link cannot express "all my repositories" and would add a step
+// instead of removing one. The classic `repo` scope covers everything the app
+// does — reading commits and diffs, creating draft releases, opening changelog
+// PRs — in a single scope.
+//
+// There is deliberately no expiration parameter: classic tokens set expiry
+// from a dropdown on the page, and an expiry passed in the URL is silently
+// ignored rather than rejected.
+const TOKEN_SCOPES = ["repo"];
+const TOKEN_DESCRIPTION = "Release Radar";
+
+function tokenCreationUrl() {
+  // Honour the configured API host so an Enterprise Server user is sent to
+  // their own appliance — a token minted on github.com is useless against
+  // GHES. Blank config resolves to https://github.com, unchanged.
+  const params = new URLSearchParams({
+    description: TOKEN_DESCRIPTION,
+    scopes: TOKEN_SCOPES.join(","),
+  });
+  // URLSearchParams encodes spaces as "+", which is what this endpoint expects:
+  // -> description=Release+Radar&scopes=repo
+  return `${webBase(githubApiBaseUrl())}/settings/tokens/new?${params.toString()}`;
+}
+
+// --- Window chrome ---------------------------------------------------------
+//
+// The OS-drawn title bar cannot be themed, so on Windows and Linux it is
+// removed entirely and redrawn in React (see src/components/rr/TitleBar.jsx).
+//
+// macOS is deliberately different: "hiddenInset" drops the title strip but
+// keeps the native traffic lights, which Mac users expect to be in the usual
+// place with the usual behaviour, and which are already theme-neutral. We do
+// NOT custom-draw those.
+const isMac = process.platform === "darwin";
+
+function frameOptions() {
+  if (isMac) return { titleBarStyle: "hiddenInset" };
+  return {
+    frame: false,
+    // Keeps the native WS_THICKFRAME on Windows, which is what Aero Snap,
+    // Win+Arrow and the edge resize handles hang off. Dropping the frame
+    // without this is where "snapping stopped working" bugs come from.
+    thickFrame: true,
+  };
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 900,
     height: 700,
+    minWidth: 480,
+    minHeight: 420,
+    // Painted with the light token; the renderer repaints immediately. Without
+    // it a frameless window flashes white-on-black while the bundle loads.
+    backgroundColor: "#fbfbfc",
+    ...frameOptions(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false
     }
   });
+
+  // Keep the renderer's maximize/restore icon truthful no matter how the state
+  // changed — button, double-click on the drag region, Win+Arrow, or a drag to
+  // a screen edge all funnel through these two events.
+  const sendMaximizeState = () => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+      win.webContents.send("window:maximize-changed", win.isMaximized());
+    }
+  };
+  win.on("maximize", sendMaximizeState);
+  win.on("unmaximize", sendMaximizeState);
 
   if (isDev) {
     win.loadURL("http://localhost:5173");
@@ -47,6 +121,35 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
+// --- Window controls -------------------------------------------------------
+//
+// With no native frame there is nothing to minimise/maximise/close the window,
+// so the renderer's title bar drives it over IPC. Each handler resolves the
+// window from the sender rather than a module-level reference, so it stays
+// correct if a second window is ever opened.
+
+function senderWindow(event) {
+  return BrowserWindow.fromWebContents(event.sender);
+}
+
+ipcMain.handle("window:minimize", (event) => {
+  senderWindow(event)?.minimize();
+});
+
+ipcMain.handle("window:toggle-maximize", (event) => {
+  const win = senderWindow(event);
+  if (!win) return false;
+  if (win.isMaximized()) win.unmaximize();
+  else win.maximize();
+  return win.isMaximized();
+});
+
+ipcMain.handle("window:close", (event) => {
+  senderWindow(event)?.close();
+});
+
+ipcMain.handle("window:is-maximized", (event) => Boolean(senderWindow(event)?.isMaximized()));
+
 // --- Settings (API keys), stored encrypted on disk via safeStorage ---
 
 ipcMain.handle("settings:get", () => getAll());
@@ -54,6 +157,22 @@ ipcMain.handle("settings:get", () => getAll());
 ipcMain.handle("settings:set", (_event, { key, value }) => {
   setSecret(key, value);
   return true;
+});
+
+// Opens the user's DEFAULT BROWSER (not an in-app window) at the pre-filled
+// token form. shell.openExternal hands the URL to the OS.
+ipcMain.handle("settings:open-token-creation-url", async () => {
+  const url = tokenCreationUrl();
+
+  // Defensive: the host comes from a user-editable setting, and openExternal
+  // will happily hand a non-http scheme to the OS. Refuse anything else.
+  const protocol = new URL(url).protocol;
+  if (protocol !== "https:" && protocol !== "http:") {
+    throw new Error(`Refusing to open a non-web URL (${protocol}). Check the GitHub API base URL in Settings.`);
+  }
+
+  await shell.openExternal(url);
+  return { opened: true, url };
 });
 
 // --- Step 1: fetch + classify ---

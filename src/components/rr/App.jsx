@@ -3,6 +3,7 @@ import { FlaskConical, GitCompareArrows, History, Radar, Settings2 } from "lucid
 import GenerateTab from "./GenerateTab";
 import HistoryTab from "./HistoryTab";
 import SettingsTab from "./SettingsTab";
+import TitleBar from "./TitleBar";
 import { getSettings, setDemoMode } from "@/lib/api.js";
 import { Callout } from "./ui";
 import { cn } from "@/lib/utils";
@@ -103,9 +104,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <TitleBar />
+
       {/* Sticky masthead: at 900px tall with a 280px commit list, the tabs
-          scrolled away exactly when you needed them. */}
-      <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-sm">
+          scrolled away exactly when you needed them. Offset by the title bar's
+          height so the two stick as a stack rather than on top of each other. */}
+      <header className="sticky top-8 z-20 border-b border-border bg-background/85 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[900px] flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-4 pb-0 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
             <span

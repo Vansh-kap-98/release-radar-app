@@ -130,7 +130,7 @@ export default function HistoryTab({ reloadKey, onRegenerate }) {
 
                 {open ? (
                   <div id={`entry-${e.id}`} className="border-t border-border">
-                    <pre className="scroll-slim max-h-[260px] overflow-auto bg-muted/40 px-4 py-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+                    <pre className="max-h-[260px] overflow-auto bg-muted/40 px-4 py-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
                       {e.markdown}
                     </pre>
                     <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-4 py-2.5">

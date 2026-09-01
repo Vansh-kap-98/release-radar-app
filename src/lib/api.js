@@ -210,6 +210,48 @@ export async function setSetting(key, value) {
   return true;
 }
 
+/**
+ * Opens GitHub's classic-PAT creation form, pre-filled, in the user's default
+ * browser. Deliberately goes through `bridge()` rather than `live()`: it is a
+ * settings action, so it keeps working in demo mode — you evaluate with demo
+ * data, then go get a real token.
+ *
+ * The main process builds and opens the URL. The fallback below only exists so
+ * the button still works in `npm run dev:renderer`, where there is no Electron
+ * shell to hand the URL to.
+ */
+export async function openTokenCreationUrl() {
+  const b = bridge();
+  if (b) return b.openTokenCreationUrl();
+
+  const params = new URLSearchParams({ description: "Release Radar", scopes: "repo" });
+  const url = `https://github.com/settings/tokens/new?${params.toString()}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+  return { opened: true, url };
+}
+
+/* ------------------------------ window chrome ------------------------------ */
+
+// Stand-in for when there is no Electron bridge (browser preview), or when an
+// older preload predates windowControls. Reports platform "web" so the title
+// bar knows to draw no buttons — the real browser chrome is already there.
+const NO_WINDOW_CONTROLS = {
+  platform: "web",
+  minimize: async () => {},
+  toggleMaximize: async () => false,
+  close: async () => {},
+  isMaximized: async () => false,
+  onMaximizeChange: () => () => {},
+};
+
+/**
+ * Window controls. Goes through `bridge()` rather than `live()` — demo mode
+ * swaps out DATA, not the window you are looking at.
+ */
+export function windowControls() {
+  return bridge()?.windowControls ?? NO_WINDOW_CONTROLS;
+}
+
 /* ----------------------------------- repo ---------------------------------- */
 
 export async function getRepoDefaults({ repo }) {

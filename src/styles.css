@@ -249,28 +249,70 @@
   }
 }
 
-@layer components {
-  /* Dense scrollable lists get a thin, self-effacing scrollbar — the default
-     Windows/Linux one is 17px and visually dominates a 280px-tall list. */
-  .scroll-slim {
+/* Scrollbars ---------------------------------------------------------------
+ *
+ * The OS scrollbar is drawn by the platform and ignores the app's theme
+ * entirely — on Windows it stays a light 17px slab over a dark UI. These rules
+ * are global rather than per-component so every scroll container in the app is
+ * themed, including ones added later; nothing needs to opt in.
+ *
+ * Both syntaxes are here because they are not interchangeable: Firefox
+ * implements the standard `scrollbar-*` properties, Chromium (what Electron
+ * actually runs) implements the ::-webkit- pseudo-elements. Chromium ignores
+ * the former, so the latter is what does the work in the desktop app.
+ *
+ * Everything resolves through the same tokens as the rest of the UI, so
+ * light/dark switching is automatic — the .dark class changes the variables
+ * and the scrollbar follows with no extra rules.
+ */
+@layer base {
+  * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-border-strong) transparent;
+    scrollbar-color: var(--border-strong) transparent;
   }
-  .scroll-slim::-webkit-scrollbar {
+
+  ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
-  .scroll-slim::-webkit-scrollbar-track {
+
+  /* Transparent rather than --background: these sit inside cards and code
+     blocks as often as on the page, and a hardcoded page colour would show as
+     a pale stripe down the side of every panel. */
+  ::-webkit-scrollbar-track {
     background: transparent;
   }
-  .scroll-slim::-webkit-scrollbar-thumb {
-    background-color: var(--color-border-strong);
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--border-strong);
     border-radius: 999px;
+    /* Inset the thumb with a transparent border so it reads as a floating pill
+       rather than a bar welded to the edge. */
     border: 3px solid transparent;
     background-clip: content-box;
   }
-  .scroll-slim::-webkit-scrollbar-thumb:hover {
-    background-color: var(--color-subtle-foreground);
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--subtle-foreground);
+  }
+
+  /* Where both axes meet. Left unpainted, it renders as a light square. */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@layer components {
+  /* Electron window dragging. There is no Tailwind utility for app-region, and
+     it is needed in two places (the title bar drags, its buttons must not), so
+     it lives here rather than as an inline style. */
+  .app-drag {
+    -webkit-app-region: drag;
+    /* A drag region swallows text selection; make that explicit. */
+    user-select: none;
+  }
+  .app-no-drag {
+    -webkit-app-region: no-drag;
   }
 }
 

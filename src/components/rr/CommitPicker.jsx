@@ -46,7 +46,7 @@ export default function CommitPicker({
         }
       />
 
-      <div className="scroll-slim max-h-[300px] overflow-y-auto overscroll-contain">
+      <div className="max-h-[300px] overflow-y-auto overscroll-contain">
         {!repoReady ? (
           <EmptyState icon={PackageSearch} title="No repository yet">
             Enter an <span className="font-mono text-foreground">owner/name</span> above to

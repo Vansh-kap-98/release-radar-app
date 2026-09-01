@@ -717,9 +717,15 @@ export default function GenerateTab({ onSaved, prefill }) {
           <div className="space-y-3">
             <Panel className="space-y-4">
               <div className="flex flex-wrap items-end gap-3">
-                <Field label="Destination" htmlFor="target" className="min-w-[13rem] flex-1">
+                <Field
+                  label="Destination"
+                  htmlFor="target"
+                  labelable={false}
+                  className="min-w-[13rem] flex-1"
+                >
                   <Select
                     id="target"
+                    aria-labelledby="target-label"
                     value={publishTarget}
                     onChange={(e) => {
                       setPublishTarget(e.target.value);
@@ -811,7 +817,7 @@ export default function GenerateTab({ onSaved, prefill }) {
                   meta={version || undefined}
                   actions={<CopyButton text={markdown} label="Copy markdown" />}
                 />
-                <pre className="scroll-slim max-h-[320px] overflow-auto bg-muted/40 px-4 py-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
+                <pre className="max-h-[320px] overflow-auto bg-muted/40 px-4 py-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap">
                   {markdown}
                 </pre>
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Check,
+  ExternalLink,
   FlaskConical,
   KeyRound,
   Loader2,
@@ -10,7 +11,7 @@ import {
   ShieldCheck,
   Sun,
 } from "lucide-react";
-import { getSettings, setSetting } from "@/lib/api.js";
+import { getSettings, openTokenCreationUrl, setSetting } from "@/lib/api.js";
 import { Badge, Button, ErrorText, Field, Input, Panel, Select, Toggle } from "./ui";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +104,19 @@ function validateApiBaseUrl(value) {
   return "";
 }
 
+// The host the "generate a token" button will actually open. Normally
+// github.com; on Enterprise Server it is the appliance, because a token minted
+// on github.com is useless against GHES.
+function tokenHostLabel(apiBaseUrl) {
+  const trimmed = (apiBaseUrl || "").trim();
+  if (!trimmed) return "github.com";
+  try {
+    return new URL(trimmed).host;
+  } catch {
+    return "github.com";
+  }
+}
+
 export default function SettingsTab({ onPreferencesChange }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -137,7 +151,20 @@ export default function SettingsTab({ onPreferencesChange }) {
     };
   }, []);
 
+  const [tokenLinkError, setTokenLinkError] = useState("");
+
   const apiBaseUrlError = validateApiBaseUrl(apiBaseUrl);
+
+  const openTokenPage = async () => {
+    setTokenLinkError("");
+    try {
+      await openTokenCreationUrl();
+    } catch (e) {
+      setTokenLinkError(
+        e?.message || "Could not open your browser. Visit github.com/settings/tokens/new manually.",
+      );
+    }
+  };
 
   // Advisory only — the Save button stays enabled regardless, so this changes
   // nothing about what saving does. It just answers "did I actually change
@@ -208,24 +235,55 @@ export default function SettingsTab({ onPreferencesChange }) {
             badge={<StatusBadge configured={settings?.githubToken} />}
             description="Needs Contents and Pull requests write access to open a changelog PR."
           >
-            <Input
-              id="gh"
-              type="password"
-              autoComplete="off"
-              value={githubToken}
-              onChange={(e) => setGithubToken(e.target.value)}
-              placeholder={settings?.githubToken ? "••••••••  (leave blank to keep)" : "ghp_…"}
-              className="font-mono"
-            />
+            <div className="space-y-3">
+              {/* Shortcut to GitHub's token form with the description and the
+                  `repo` scope already filled in. It does NOT fetch the token
+                  back — GitHub shows a new token once, on its own page, and
+                  offers no way to hand it to us — so the paste field below
+                  stays exactly as it was. */}
+              <div className="space-y-1.5">
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={openTokenPage}
+                  className="h-auto min-h-8 max-w-full whitespace-normal py-1.5 text-left"
+                >
+                  <ExternalLink aria-hidden="true" />
+                  <span>
+                    Generate a GitHub token for Release Radar{" "}
+                    <span className="font-normal text-muted-foreground">
+                      (opens {tokenHostLabel(apiBaseUrl)})
+                    </span>
+                  </span>
+                </Button>
+                <p className="max-w-[52ch] text-xs leading-relaxed text-muted-foreground">
+                  This opens GitHub with the right permissions pre-selected — review them,
+                  click Generate, then paste the token below.
+                </p>
+                <ErrorText>{tokenLinkError}</ErrorText>
+              </div>
+
+              <Input
+                id="gh"
+                type="password"
+                autoComplete="off"
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                placeholder={settings?.githubToken ? "••••••••  (leave blank to keep)" : "ghp_…"}
+                className="font-mono"
+              />
+            </div>
           </Row>
 
           <Row
             label="AI provider"
             htmlFor="provider"
+            labelable={false}
             description="Which model classifies commits and formats the notes."
           >
             <Select
               id="provider"
+              aria-labelledby="provider-label"
               value={aiProvider}
               onChange={(e) => setAiProvider(e.target.value)}
             >
