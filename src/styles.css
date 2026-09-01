@@ -4,17 +4,24 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system definition.
+ * Release Radar design system
+ * ===========================
  *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
+ * Tone: this is a release-engineering tool. It should read like a build log or
+ * an IDE panel — dense, precise, quiet — not like a marketing page. So: no
+ * gradients, no large hero type, one restrained accent, and information
+ * density treated as a feature rather than something to pad out.
  *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
+ * Two rules worth knowing before editing:
  *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ * 1. CATEGORY colors and STATUS colors are separate palettes and must not be
+ *    borrowed for each other. `--cat-*` encodes a commit's changelog category
+ *    and appears ONLY on category badges. `--success/--warning/--danger/--info`
+ *    encode UI state and appear on callouts, validation and results. Using
+ *    `--cat-docs` for a banner made purple mean "documentation" in one place
+ *    and "demo mode" in another.
+ *
+ * 2. Type sizes come from the scale below. No arbitrary `text-[13px]`.
  */
 
 @theme inline {
@@ -23,13 +30,76 @@
     sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Type scale -------------------------------------------------------------
+   * Six steps, compact because this is a dense desktop tool. Line-heights are
+   * looser at small sizes (where text wraps into paragraphs) and tighter at
+   * large sizes (where it is always one or two words).
+   */
+  --text-2xs: 0.6875rem; /* 11px — micro meta: shas, timestamps, badge text */
+  --text-2xs--line-height: 1.45;
+  --text-xs: 0.75rem; /* 12px — secondary and helper text */
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.8125rem; /* 13px — default UI text */
+  --text-sm--line-height: 1.55;
+  --text-base: 0.875rem; /* 14px — emphasized body */
+  --text-base--line-height: 1.6;
+  --text-lg: 1rem; /* 16px — panel titles */
+  --text-lg--line-height: 1.4;
+  --text-xl: 1.1875rem; /* 19px — the one page title */
+  --text-xl--line-height: 1.25;
+
+  /* Radius -----------------------------------------------------------------
+   * Varies by role, and nests: a control inside a card is always a step
+   * smaller than the card, so corners stay concentric instead of parallel.
+   */
+  --radius-sm: 4px; /* badges, chips, inline markers */
+  --radius-md: 6px; /* buttons, inputs, selects */
+  --radius-lg: 10px; /* cards and panels */
+  --radius-xl: 14px; /* the outermost surfaces only */
+
+  /* Elevation --------------------------------------------------------------
+   * Three levels, used sparingly. Most structure is carried by 1px borders;
+   * shadow is reserved for things that genuinely float above the page.
+   */
+  --shadow-xs: 0 1px 1px oklch(0.2 0.02 262 / 0.04);
+  --shadow-sm:
+    0 1px 2px oklch(0.2 0.02 262 / 0.06), 0 1px 1px -0.5px oklch(0.2 0.02 262 / 0.04);
+  --shadow-md:
+    0 4px 12px -2px oklch(0.2 0.02 262 / 0.08), 0 2px 4px -2px oklch(0.2 0.02 262 / 0.05);
+
+  /* Surfaces and text */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-elevated: var(--elevated);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+
+  /* Interaction */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-surface: var(--accent-surface);
+  --color-hover: var(--hover);
+  --color-ring: var(--ring);
+
+  /* Status — UI state only */
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-info: var(--info);
+  --color-info-surface: var(--info-surface);
+
+  /* Changelog categories — badges only */
   --color-cat-feat: var(--cat-feat);
   --color-cat-feat-bg: var(--cat-feat-bg);
   --color-cat-fix: var(--cat-fix);
@@ -41,111 +111,106 @@
   --color-cat-chore: var(--cat-chore);
   --color-cat-chore-bg: var(--cat-chore-bg);
   --color-range: var(--range-bg);
-
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-ring-offset-background: var(--background);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Light -------------------------------------------------------------------
+ * Neutrals carry a slight cool cast so the teal accent sits in the same
+ * family rather than looking bolted on.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.21 0.015 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --elevated: oklch(1 0 0);
+  --muted: oklch(0.962 0.004 255);
+  /* 0.48 rather than 0.53: at 11-12px the old value sat under 4.5:1 on card. */
+  --muted-foreground: oklch(0.48 0.016 258);
+  --subtle-foreground: oklch(0.535 0.015 258);
+  --border: oklch(0.905 0.006 258);
+  --border-strong: oklch(0.845 0.008 258);
+  --input: oklch(0.878 0.007 258);
+
+  /* Near-black primary. Deliberately not a brand hue: the primary button is a
+   * commit action, and neutral weight reads as "confirm" rather than "promo". */
+  --primary: oklch(0.26 0.018 262);
+  --primary-foreground: oklch(0.985 0.002 250);
+
+  /* Accent: signal teal. Used for focus, selection and the active tab — the
+   * places that answer "where am I / what did I pick". Never decorative. */
+  --accent: oklch(0.52 0.088 205);
+  --accent-foreground: oklch(0.99 0.002 250);
+  --accent-surface: oklch(0.955 0.022 205);
+  --hover: oklch(0.945 0.006 255);
+  --ring: oklch(0.58 0.09 205);
+
+  --success: oklch(0.46 0.11 155);
+  --success-surface: oklch(0.955 0.03 155);
+  --warning: oklch(0.5 0.11 75);
+  --warning-surface: oklch(0.96 0.045 85);
+  --danger: oklch(0.51 0.19 25);
+  --danger-surface: oklch(0.96 0.028 25);
+  --info: oklch(0.48 0.09 235);
+  --info-surface: oklch(0.955 0.025 235);
+
+  --cat-feat: oklch(0.44 0.12 155);
+  --cat-feat-bg: oklch(0.94 0.042 155);
+  --cat-fix: oklch(0.45 0.13 250);
+  --cat-fix-bg: oklch(0.94 0.04 250);
+  --cat-breaking: oklch(0.48 0.18 25);
+  --cat-breaking-bg: oklch(0.94 0.05 25);
+  --cat-docs: oklch(0.45 0.15 305);
+  --cat-docs-bg: oklch(0.95 0.042 305);
+  --cat-chore: oklch(0.46 0.008 260);
+  --cat-chore-bg: oklch(0.935 0.004 260);
+  --range-bg: oklch(0.966 0.016 205);
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --background: oklch(0.175 0.012 262);
+  --foreground: oklch(0.94 0.005 250);
+  --card: oklch(0.215 0.014 262);
+  --elevated: oklch(0.245 0.015 262);
+  --muted: oklch(0.262 0.014 262);
+  --muted-foreground: oklch(0.72 0.013 258);
+  --subtle-foreground: oklch(0.645 0.013 258);
+  --border: oklch(0.305 0.014 262);
+  --border-strong: oklch(0.38 0.016 262);
+  --input: oklch(0.35 0.015 262);
+
+  --primary: oklch(0.93 0.008 255);
+  --primary-foreground: oklch(0.2 0.014 262);
+
+  --accent: oklch(0.74 0.1 200);
+  --accent-foreground: oklch(0.17 0.014 262);
+  --accent-surface: oklch(0.28 0.05 205);
+  --hover: oklch(0.265 0.016 262);
+  --ring: oklch(0.7 0.1 200);
+
+  --success: oklch(0.79 0.13 155);
+  --success-surface: oklch(0.29 0.06 155);
+  --warning: oklch(0.82 0.12 85);
+  --warning-surface: oklch(0.3 0.06 80);
+  --danger: oklch(0.75 0.14 25);
+  --danger-surface: oklch(0.31 0.08 25);
+  --info: oklch(0.78 0.1 235);
+  --info-surface: oklch(0.29 0.06 235);
+
+  --cat-feat: oklch(0.83 0.13 155);
+  --cat-feat-bg: oklch(0.31 0.065 155);
+  --cat-fix: oklch(0.81 0.11 250);
+  --cat-fix-bg: oklch(0.3 0.065 255);
+  --cat-breaking: oklch(0.81 0.12 25);
+  --cat-breaking-bg: oklch(0.32 0.085 25);
+  --cat-docs: oklch(0.83 0.11 305);
+  --cat-docs-bg: oklch(0.31 0.075 305);
+  --cat-chore: oklch(0.78 0.008 260);
+  --cat-chore-bg: oklch(0.29 0.008 260);
+  --range-bg: oklch(0.245 0.03 205);
+
+  /* Shadows read as noise on dark surfaces; borders do the work instead. */
+  --shadow-xs: 0 0 0 0 transparent;
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 4px 14px -2px oklch(0 0 0 / 0.45);
 }
 
 @layer base {
@@ -156,74 +221,65 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-  }
-}
-
-/* Release Radar palette ---------------------------------------------------- */
-:root {
-  --radius: 0.5rem;
-  --background: oklch(0.985 0.002 250);
-  --foreground: oklch(0.22 0.015 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.015 260);
-  --muted: oklch(0.955 0.004 255);
-  --muted-foreground: oklch(0.53 0.017 258);
-  --border: oklch(0.9 0.006 258);
-  --input: oklch(0.9 0.006 258);
-  --primary: oklch(0.28 0.02 262);
-  --primary-foreground: oklch(0.985 0.002 250);
-  --accent: oklch(0.945 0.008 255);
-  --accent-foreground: oklch(0.25 0.015 260);
-  --ring: oklch(0.62 0.06 258);
-  --destructive: oklch(0.55 0.2 25);
-  --cat-feat: oklch(0.45 0.13 155);
-  --cat-feat-bg: oklch(0.93 0.05 155);
-  --cat-fix: oklch(0.48 0.14 250);
-  --cat-fix-bg: oklch(0.93 0.045 250);
-  --cat-breaking: oklch(0.5 0.19 25);
-  --cat-breaking-bg: oklch(0.93 0.06 25);
-  --cat-docs: oklch(0.48 0.16 305);
-  --cat-docs-bg: oklch(0.94 0.05 305);
-  --cat-chore: oklch(0.5 0.01 260);
-  --cat-chore-bg: oklch(0.93 0.004 260);
-  --range-bg: oklch(0.955 0.012 250);
-}
-
-.dark {
-  --background: oklch(0.19 0.012 262);
-  --foreground: oklch(0.93 0.006 250);
-  --card: oklch(0.225 0.014 262);
-  --card-foreground: oklch(0.93 0.006 250);
-  --muted: oklch(0.26 0.014 262);
-  --muted-foreground: oklch(0.68 0.014 258);
-  --border: oklch(0.32 0.014 262);
-  --input: oklch(0.34 0.014 262);
-  --primary: oklch(0.9 0.01 255);
-  --primary-foreground: oklch(0.2 0.014 262);
-  --accent: oklch(0.28 0.016 262);
-  --accent-foreground: oklch(0.93 0.006 250);
-  --ring: oklch(0.6 0.04 258);
-  --destructive: oklch(0.65 0.19 25);
-  --cat-feat: oklch(0.82 0.14 155);
-  --cat-feat-bg: oklch(0.32 0.07 155);
-  --cat-fix: oklch(0.8 0.12 250);
-  --cat-fix-bg: oklch(0.31 0.07 255);
-  --cat-breaking: oklch(0.8 0.13 25);
-  --cat-breaking-bg: oklch(0.33 0.09 25);
-  --cat-docs: oklch(0.82 0.12 305);
-  --cat-docs-bg: oklch(0.32 0.08 305);
-  --cat-chore: oklch(0.78 0.008 260);
-  --cat-chore-bg: oklch(0.3 0.008 260);
-  --range-bg: oklch(0.245 0.016 262);
-}
-
-@layer base {
-  body {
     font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+
+  /* Tabular figures everywhere numbers are compared down a column — commit
+     counts, diff sizes, version numbers. Stops digits from jittering. */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "calt" 0;
+  }
+
+  /* One focus treatment for the whole app: an accent ring with an offset in
+     the surface color, so it reads the same on cards and on the page. */
   :focus-visible {
     outline: 2px solid var(--color-ring);
     outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  ::selection {
+    background-color: var(--color-accent-surface);
+    color: var(--color-foreground);
+  }
+}
+
+@layer components {
+  /* Dense scrollable lists get a thin, self-effacing scrollbar — the default
+     Windows/Linux one is 17px and visually dominates a 280px-tall list. */
+  .scroll-slim {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+  .scroll-slim::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scroll-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .scroll-slim::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-subtle-foreground);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
