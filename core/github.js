@@ -16,6 +16,35 @@ function assertValidRepo(repo) {
   }
 }
 
+// --- GitHub Enterprise Server support -----------------------------------
+//
+// Every request goes through apiBase() so the host is configurable in one
+// place. GitHub.com stays the default and an absent/blank value resolves to
+// it, so existing callers that pass nothing behave exactly as before.
+//
+// GHES exposes its API under a /api/v3 path on the appliance's own host
+// (https://ghe.example.com/api/v3) rather than a dedicated api.* domain, so
+// this has to be the full base URL, not just a hostname.
+
+const DEFAULT_API_BASE_URL = "https://api.github.com";
+
+function apiBase(apiBaseUrl) {
+  const raw = typeof apiBaseUrl === "string" ? apiBaseUrl.trim() : "";
+  if (!raw) return DEFAULT_API_BASE_URL;
+  // Trailing slashes would produce "//repos/..." — harmless on GitHub.com,
+  // but some enterprise proxies are stricter about it.
+  return raw.replace(/\/+$/, "");
+}
+
+// The web UI host that goes with an API base, used only for building
+// human-facing links (never for requests). GitHub.com splits them across two
+// domains; GHES serves both from one host with the API under /api/v3.
+function webBase(apiBaseUrl) {
+  const base = apiBase(apiBaseUrl);
+  if (base === DEFAULT_API_BASE_URL) return "https://github.com";
+  return base.replace(/\/api\/v3\/?$/, "");
+}
+
 // --- Diff-aware changelog support ---------------------------------------
 //
 // The Compare API already returns a `files` array with per-file unified
@@ -167,13 +196,13 @@ function summarizeFiles(rawFiles) {
   return { files, omittedFileCount, responseCapped };
 }
 
-async function fetchChangeRange({ repo, fromRef, toRef, githubToken }) {
+async function fetchChangeRange({ repo, fromRef, toRef, githubToken, apiBaseUrl }) {
   assertValidRepo(repo);
   if (!fromRef || !toRef) {
     throw new Error("Both fromRef and toRef are required.");
   }
 
-  const url = `https://api.github.com/repos/${repo}/compare/${encodeURIComponent(
+  const url = `${apiBase(apiBaseUrl)}/repos/${repo}/compare/${encodeURIComponent(
     fromRef
   )}...${encodeURIComponent(toRef)}`;
 
@@ -226,13 +255,13 @@ async function fetchChangeRange({ repo, fromRef, toRef, githubToken }) {
 // Feature 1: visual commit picker. Lists commits on a branch (paginated via
 // GitHub's `page` query param), newest first — same order the UI shows them
 // in, so "more recent" comparisons can be done via array index.
-async function listCommits({ repo, branch, page = 1, githubToken }) {
+async function listCommits({ repo, branch, page = 1, githubToken, apiBaseUrl }) {
   assertValidRepo(repo);
 
   const params = new URLSearchParams({ per_page: "30", page: String(page) });
   if (branch) params.set("sha", branch);
 
-  const res = await fetch(`https://api.github.com/repos/${repo}/commits?${params}`, {
+  const res = await fetch(`${apiBase(apiBaseUrl)}/repos/${repo}/commits?${params}`, {
     headers: authHeaders(githubToken)
   });
 
@@ -264,12 +293,12 @@ async function listCommits({ repo, branch, page = 1, githubToken }) {
 
 // Feature 2: auto-detect the default range. Latest release tag (if any) +
 // the repo's actual default branch (not a hardcoded "main").
-async function getRepoDefaults({ repo, githubToken }) {
+async function getRepoDefaults({ repo, githubToken, apiBaseUrl }) {
   assertValidRepo(repo);
 
   const [repoRes, releaseRes] = await Promise.all([
-    fetch(`https://api.github.com/repos/${repo}`, { headers: authHeaders(githubToken) }),
-    fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: authHeaders(githubToken) })
+    fetch(`${apiBase(apiBaseUrl)}/repos/${repo}`, { headers: authHeaders(githubToken) }),
+    fetch(`${apiBase(apiBaseUrl)}/repos/${repo}/releases/latest`, { headers: authHeaders(githubToken) })
   ]);
 
   if (repoRes.status === 404) {
@@ -296,10 +325,10 @@ async function getRepoDefaults({ repo, githubToken }) {
 
 // Feature 5 (GitHub Action): CI has no UI to pick refs from, so it has to
 // derive "what changed since the last release" on its own.
-async function listTags({ repo, githubToken, perPage = 100 }) {
+async function listTags({ repo, githubToken, perPage = 100, apiBaseUrl }) {
   assertValidRepo(repo);
 
-  const res = await fetch(`https://api.github.com/repos/${repo}/tags?per_page=${perPage}`, {
+  const res = await fetch(`${apiBase(apiBaseUrl)}/repos/${repo}/tags?per_page=${perPage}`, {
     headers: authHeaders(githubToken)
   });
   if (!res.ok) throw new Error(`GitHub API error listing tags: ${res.status} ${res.statusText}`);
@@ -311,8 +340,8 @@ async function listTags({ repo, githubToken, perPage = 100 }) {
 // Given the tag being released, find the tag immediately before it. Returns
 // null when this is the first tag — the caller decides what to do about it,
 // since there's no meaningful "previous release" to compare against.
-async function findPreviousTag({ repo, tag, githubToken }) {
-  const tags = await listTags({ repo, githubToken });
+async function findPreviousTag({ repo, tag, githubToken, apiBaseUrl }) {
+  const tags = await listTags({ repo, githubToken, apiBaseUrl });
   if (tags.length === 0) return null;
 
   const index = tags.findIndex((t) => t.name === tag);
@@ -331,5 +360,8 @@ module.exports = {
   listTags,
   findPreviousTag,
   summarizeFiles,
-  truncatePatch
+  truncatePatch,
+  apiBase,
+  webBase,
+  DEFAULT_API_BASE_URL
 };

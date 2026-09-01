@@ -25,9 +25,29 @@ This starts the Vite dev server and Electron together with hot reload.
 ```bash
 npm test
 ```
-296 assertions across 8 suites, no test framework and no dev dependencies —
+426 assertions across 11 suites, no test framework and no dev dependencies —
 plain Node scripts, matching `core/`'s dependency-free constraint. They mock
 `fetch` and the Electron APIs, so nothing hits a real API or needs a key.
+
+CI runs the same command on every push and pull request
+(`.github/workflows/test.yml`), on Node 18, 20 and 22, and additionally fails
+the build if `core/` ever grows a dependency or an Electron import.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to add a suite.
+
+## Build artifacts (`dist/`, `release/`)
+
+`dist/` is the compiled renderer. It is **not** tracked in git — regenerate it
+with:
+
+```bash
+npm run build:renderer
+```
+
+Electron loads `dist/index.html` in production and `electron-builder` bundles
+it, so a production build needs it to exist, but it is derived entirely from
+`src/` and would otherwise churn on every commit. `npm run build` (below) runs
+this step for you. `release/` (installers) is untracked for the same reason.
 
 ## Build a distributable installer
 ```bash
@@ -74,8 +94,11 @@ Recommended path for v1:
 ```
 release-radar-app/
 ├── core/                  # pipeline logic, NO Electron dependency
-│   ├── github.js          # commit ranges, commit list, tags, diff summarizing
+│   ├── github.js          # commit ranges, commit list, tags, diff summarizing,
+│   │                      # configurable API host (GitHub Enterprise)
 │   ├── ai.js              # classify + format, retry/backoff, 4 providers
+│   ├── semver.js          # version bump suggestion (no AI call, no network)
+│   ├── export.js          # markdown -> HTML / plain text
 │   ├── publish.js         # GitHub Release / Slack / changelog PR
 │   └── index.js           # barrel export
 ├── action/                # companion GitHub Action (uses core/)
@@ -94,14 +117,23 @@ release-radar-app/
 │   ├── lib/               # api (IPC bridge + mocks), semver, rr-utils, utils
 │   └── components/rr/     # App shell, GenerateTab, HistoryTab, SettingsTab,
 │                          # CommitPicker, ui primitives
-├── test/                  # 296 assertions, `npm test`, no framework
+├── test/                  # 426 assertions, `npm test`, no framework
+├── .github/workflows/
+│   ├── test.yml           # runs the suites on every push/PR
+│   └── release-action.yml # moves the floating v1 tag (repo maintenance)
+├── cli.js                 # headless entrypoint (uses core/, no deps)
 ├── index.html
 ├── vite.config.mjs
+├── CONTRIBUTING.md
+├── SECURITY.md
+├── LICENSE
 └── package.json
 ```
 
-`core/` is deliberately free of Electron imports so the exact same pipeline
-runs in the desktop app and on GitHub's servers in the Action.
+`core/` is deliberately free of Electron imports **and of npm dependencies**, so
+the exact same pipeline runs in the desktop app, on GitHub's servers in the
+Action, and in `cli.js` — the latter two with no install and no build step. CI
+enforces both properties; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Detailed analysis (diff-aware mode)
 
@@ -187,6 +219,98 @@ Classification results are cached in memory for the session, keyed by
 `(repo, fromRef, toRef, detailedMode)`, so re-running an identical request
 costs nothing. "Regenerate" from the History tab deliberately bypasses it.
 
+## Command line
+
+`cli.js` runs the same `core/` pipeline headlessly — no Electron, no UI, no
+install:
+
+```bash
+node cli.js --repo acme/app > CHANGELOG.md
+```
+
+Or without cloning at all:
+
+```bash
+npx github:Vansh-kap-98/release-radar-app --repo acme/app
+```
+
+It is dependency-free like the Action, so `npx` pulls no tree of packages.
+
+Only the changelog goes to stdout; all progress and warnings go to stderr, so
+redirecting to a file gives you a clean changelog and still shows progress in
+the terminal.
+
+```bash
+# a specific range, with diff-aware analysis
+node cli.js --repo acme/app --from v1.2.0 --to main --detailed
+
+# structured output for scripting (markdown, changes, version suggestion)
+node cli.js --repo acme/app --json
+
+# other formats
+node cli.js --repo acme/app --format html
+node cli.js --repo acme/app --format text
+
+# opt in to writing back — nothing is published without this flag
+node cli.js --repo acme/app --publish pull-request
+```
+
+Credentials come from the environment (preferred — a flag lands in your shell
+history and the process list):
+
+| Variable | Purpose |
+| --- | --- |
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub token |
+| `RELEASE_RADAR_AI_KEY` | AI key for any provider |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` / `GOOGLE_API_KEY` | per-provider fallback |
+| `GITHUB_API_BASE_URL` | GitHub Enterprise API root |
+| `GITHUB_REPOSITORY` | default for `--repo` |
+
+Options can also be piped in as JSON, using the same names without dashes:
+
+```bash
+echo '{"repo":"acme/app","detailed":true}' | node cli.js
+```
+
+Flags beat stdin; stdin beats the environment. `node cli.js --help` documents
+everything. The default publish target is `markdown-only`, so a bare run never
+writes to your repository.
+
+## Try demo data
+
+Settings → **Try demo data** fills the app with a fabricated repository —
+commits, classifications, version suggestion, changelog history — so you can
+see the entire flow before creating a single API key. No network calls are made
+and nothing can be published while it is on; a banner across the top says so.
+
+It is off by default and formalizes the mock-data fallback the renderer already
+used when run in a plain browser (`npm run dev:renderer`), so UI work needs no
+keys either.
+
+## Theme
+
+Settings → **Theme** offers System, Light and Dark. The default is **System**,
+which follows your OS exactly as the app always has — existing installs see no
+change. Light and Dark pin the theme and stop following the OS. The preference
+is stored unencrypted alongside the other non-secret settings.
+
+## GitHub Enterprise Server
+
+Settings → **GitHub API base URL** points every GitHub request at a different
+host. Leave it blank for GitHub.com (the default). For GitHub Enterprise Server
+use your appliance's API root:
+
+```
+https://ghe.example.com/api/v3
+```
+
+This covers reads and writes — compare, commits, tags, releases and the whole
+pull-request flow — and human-facing links in error messages follow the same
+host. The CLI takes `--api-base-url` or `$GITHUB_API_BASE_URL`.
+
+The classification cache is keyed by host, so the same `owner/name` on
+github.com and on an appliance never share a cached result.
+
 ## History
 
 Every generated changelog is saved locally to `release-radar-history.json`
@@ -213,5 +337,58 @@ In the Action it lives in GitHub Actions secrets and requests are made from
 GitHub's runners, not your computer. That's a real difference in trust model —
 use the desktop app if that matters to you.
 
-Not yet done: publishing to the GitHub Marketplace (step 3 of the roadmap), which
-requires a release tag and a Marketplace listing from the repo owner's account.
+### Using the Action without a Marketplace listing
+
+This Action is **not published to the GitHub Marketplace**, and it does not need
+to be. A Marketplace listing only affects discoverability — any workflow can
+reference an Action directly by repository, and it behaves identically:
+
+```yaml
+- uses: Vansh-kap-98/release-radar-app@main
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    ai-api-key: ${{ secrets.AI_API_KEY }}
+```
+
+`@main` always gets the newest code. **Pin to a tag or commit SHA instead** for
+anything you care about, so an upstream change cannot alter a release job
+without you noticing:
+
+```yaml
+# a release tag
+- uses: Vansh-kap-98/release-radar-app@v1.0.0
+
+# the floating major tag — picks up v1.x.y fixes, never a breaking change
+- uses: Vansh-kap-98/release-radar-app@v1
+
+# or an exact commit, the strongest guarantee
+- uses: Vansh-kap-98/release-radar-app@9e36464cb26e0f3a8f0d0f6f9d2f1a0b9c8d7e6f
+```
+
+The floating `v1` tag is maintained automatically by
+`.github/workflows/release-action.yml`, which moves it to each new plain
+`vX.Y.Z` release (pre-releases are skipped).
+
+The repository must be public, or the calling workflow must be in the same
+organization with Actions access configured — the same rule that applies to any
+Action referenced by repository.
+
+Because the Action ships **no build output** — GitHub runs `action/index.js` and
+`core/` exactly as committed — you can read at a tag precisely what will execute.
+That is worth more than a Marketplace badge for auditability.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The two rules most likely to trip up a
+PR: `core/` must stay dependency-free (it is what lets the Action and the CLI
+run with no install step), and new features must not change default behavior.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report a vulnerability privately, and
+for the trust-model difference between the desktop app (your key never leaves
+your machine) and the Action (your key runs on GitHub's runners).
+
+## License
+
+[MIT](LICENSE) © Vansh Kapoor

@@ -35,10 +35,16 @@ Give a one-sentence reason a maintainer would accept.
 Return ONLY valid JSON, no prose and no markdown fencing, shaped exactly:
 {"changes": [ ...the objects above... ], "version": {"bump": "major|minor|patch", "reasoning": "one sentence"}}`;
 
-// PARKED (diff-aware changelog): the prompt below is the finished diff-aware
-// version — kept as a live constant rather than a commented-out block so it
-// stays readable and editable. Unused until the feature is switched back on;
-// see the note at the bottom of README.md for how to re-enable.
+// The diff-aware prompt. This is LIVE: classifyChanges() selects it whenever a
+// caller passes `fileContext`, which happens when "detailed analysis" is on in
+// the desktop app or `detailed-analysis: true` in the Action.
+//
+// It defaults OFF for cost, not because it is unfinished. Sending file diffs
+// adds roughly 10-20k input tokens per run and needs an 8000-token output
+// budget instead of 2000, which is enough to exhaust a free-tier key in a few
+// runs. The commit-messages-only prompt above stays the default so the tool
+// works on a free key; users with headroom opt in and get titles derived from
+// the actual code change rather than the commit message wording.
 const CLASSIFY_SYSTEM_PROMPT_DIFF_AWARE = `You are a changelog classification engine. You will receive a JSON object with:
 - "commits": an array of commits (sha, message, author) for the whole range.
 - "files": an array of file-level changes for the whole range (filename, status, additions, deletions, and usually a truncated unified diff "patch"). Some entries have no patch and carry a "note" instead.

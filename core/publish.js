@@ -1,3 +1,5 @@
+const { apiBase, webBase } = require("./github");
+
 function authHeaders(githubToken) {
   return {
     Authorization: `Bearer ${githubToken}`,
@@ -16,9 +18,9 @@ function writeHeaders(githubToken) {
 // edited). It is passed in rather than derived here so that what the user
 // approved in the UI is exactly what gets tagged. Falls back to the range's
 // end ref when no version was supplied.
-async function publishGithubRelease({ repo, range, markdown, githubToken, version }) {
+async function publishGithubRelease({ repo, range, markdown, githubToken, version, apiBaseUrl }) {
   const toRef = (version && String(version).trim()) || range.split("...")[1];
-  const res = await fetch(`https://api.github.com/repos/${repo}/releases`, {
+  const res = await fetch(`${apiBase(apiBaseUrl)}/repos/${repo}/releases`, {
     method: "POST",
     headers: { ...authHeaders(githubToken), "content-type": "application/json" },
     body: JSON.stringify({
@@ -59,15 +61,17 @@ function sanitizeBranchSegment(text) {
 // `prBody` lets the PR description carry extra context (a version suggestion,
 // say) without that text leaking into the committed CHANGELOG.md, which should
 // contain only the changelog itself. Defaults to the changelog text.
-async function openChangelogPullRequest({ repo, range, markdown, version, githubToken, prBody }) {
+async function openChangelogPullRequest({ repo, range, markdown, version, githubToken, prBody, apiBaseUrl }) {
+  const api = apiBase(apiBaseUrl);
+
   // 1. Find the repo's actual default branch (not a hardcoded "main").
-  const repoRes = await fetch(`https://api.github.com/repos/${repo}`, { headers: authHeaders(githubToken) });
+  const repoRes = await fetch(`${api}/repos/${repo}`, { headers: authHeaders(githubToken) });
   if (!repoRes.ok) throw new Error(`Failed to read repo info: ${repoRes.status} ${await repoRes.text()}`);
   const { default_branch: defaultBranch } = await repoRes.json();
 
   // 2. Read the commit SHA the default branch currently points at.
   const refRes = await fetch(
-    `https://api.github.com/repos/${repo}/git/ref/heads/${encodeURIComponent(defaultBranch)}`,
+    `${api}/repos/${repo}/git/ref/heads/${encodeURIComponent(defaultBranch)}`,
     { headers: authHeaders(githubToken) }
   );
   if (!refRes.ok) throw new Error(`Failed to read default branch ref: ${refRes.status} ${await refRes.text()}`);
@@ -76,7 +80,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
 
   // 3. Create a new branch off that commit.
   const branchName = `release-notes/${sanitizeBranchSegment(version)}-${Date.now().toString(36)}`;
-  const createRefRes = await fetch(`https://api.github.com/repos/${repo}/git/refs`, {
+  const createRefRes = await fetch(`${api}/repos/${repo}/git/refs`, {
     method: "POST",
     headers: writeHeaders(githubToken),
     body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: baseSha })
@@ -85,7 +89,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
     if (createRefRes.status === 403) {
       throw new Error(
         "GitHub denied branch creation (403). Your token needs the \"Contents\" permission set to Read and write — " +
-          "check it at github.com/settings/tokens."
+          `check it at ${webBase(apiBaseUrl)}/settings/tokens.`
       );
     }
     throw new Error(`Failed to create branch ${branchName}: ${createRefRes.status} ${await createRefRes.text()}`);
@@ -93,7 +97,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
 
   // 4. Check whether CHANGELOG.md already exists on the new branch.
   const existingRes = await fetch(
-    `https://api.github.com/repos/${repo}/contents/CHANGELOG.md?ref=${encodeURIComponent(branchName)}`,
+    `${api}/repos/${repo}/contents/CHANGELOG.md?ref=${encodeURIComponent(branchName)}`,
     { headers: authHeaders(githubToken) }
   );
 
@@ -110,7 +114,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
   // 5. Prepend the new section if the file exists; create it fresh if not.
   const newContent = existingContent ? `${markdown}\n\n${existingContent}` : `# Changelog\n\n${markdown}\n`;
 
-  const putRes = await fetch(`https://api.github.com/repos/${repo}/contents/CHANGELOG.md`, {
+  const putRes = await fetch(`${api}/repos/${repo}/contents/CHANGELOG.md`, {
     method: "PUT",
     headers: writeHeaders(githubToken),
     body: JSON.stringify({
@@ -123,7 +127,7 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
   if (!putRes.ok) throw new Error(`Failed to write CHANGELOG.md: ${putRes.status} ${await putRes.text()}`);
 
   // 6. Open the PR, using the same markdown as its description.
-  const prRes = await fetch(`https://api.github.com/repos/${repo}/pulls`, {
+  const prRes = await fetch(`${api}/repos/${repo}/pulls`, {
     method: "POST",
     headers: writeHeaders(githubToken),
     body: JSON.stringify({
@@ -136,12 +140,13 @@ async function openChangelogPullRequest({ repo, range, markdown, version, github
   if (!prRes.ok) {
     // The branch and commit already landed by this point, so say so — the
     // work isn't lost, only the PR step failed.
-    const compareUrl = `https://github.com/${repo}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(branchName)}?expand=1`;
+    // Human-facing link only, so it uses the web host rather than the API host.
+    const compareUrl = `${webBase(apiBaseUrl)}/${repo}/compare/${encodeURIComponent(defaultBranch)}...${encodeURIComponent(branchName)}?expand=1`;
     if (prRes.status === 403) {
       throw new Error(
         `Branch "${branchName}" and the CHANGELOG.md commit were created, but GitHub denied opening the pull request (403). ` +
           "Your token needs the \"Pull requests\" permission set to Read and write (Contents alone isn't enough) — " +
-          `check it at github.com/settings/tokens. You can also open the PR manually: ${compareUrl}`
+          `check it at ${webBase(apiBaseUrl)}/settings/tokens. You can also open the PR manually: ${compareUrl}`
       );
     }
     throw new Error(

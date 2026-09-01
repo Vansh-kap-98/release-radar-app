@@ -1,0 +1,69 @@
+# Runs the test suite on every push and pull request, so the suites gate
+# merges rather than only being run by hand.
+#
+# Deliberately minimal: there is nothing to build and nothing to install for
+# the tests themselves. core/ is dependency-free and test/ is plain Node
+# scripts with no framework, so `npm ci` is not needed to run them — which
+# also means this workflow keeps passing even if the devDependency tree
+# breaks. See CONTRIBUTING.md.
+
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # 18 is the floor core/package.json declares (global fetch());
+        # 20 is what the Action runs on.
+        node-version: ["18", "20", "22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Run tests
+        run: node test/run-all.js
+
+      - name: Verify core/ has no dependencies
+        # core/ being dependency-free is what lets the Action run as committed,
+        # with no install step. Enforced here so a PR cannot quietly break it.
+        run: |
+          set -euo pipefail
+          node -e '
+            const pkg = require("./core/package.json");
+            const deps = {
+              ...(pkg.dependencies || {}),
+              ...(pkg.peerDependencies || {}),
+              ...(pkg.optionalDependencies || {})
+            };
+            const names = Object.keys(deps);
+            if (names.length) {
+              console.error("core/package.json declares dependencies: " + names.join(", "));
+              console.error("core/ must stay dependency-free — see CONTRIBUTING.md.");
+              process.exit(1);
+            }
+            console.log("core/ is dependency-free.");
+          '
+
+      - name: Verify core/, action/ and cli.js do not require Electron
+        run: |
+          set -euo pipefail
+          if grep -rn --include='*.js' -E 'require\(\s*["'"'"']electron' core action cli.js; then
+            echo "core/, action/ and cli.js must not require Electron — see CONTRIBUTING.md."
+            exit 1
+          fi
+          echo "No Electron imports outside electron/."

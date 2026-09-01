@@ -2,9 +2,34 @@
  * Single data layer for Release Radar.
  * Every function talks to the Electron bridge (window.releaseRadar) when it is
  * available, and otherwise falls back to mock data so the UI works in a browser.
+ *
+ * Demo mode formalizes that fallback: with it on, the data functions use the
+ * mock path even inside Electron, so the whole UI can be evaluated before any
+ * API key exists. It is off by default and never changes what an existing user
+ * sees unless they turn it on in Settings.
  */
 
 const bridge = () => (typeof window !== "undefined" ? window.releaseRadar : null);
+
+let demoMode = false;
+
+export function setDemoMode(on) {
+  demoMode = Boolean(on);
+}
+
+export function isDemoMode() {
+  return demoMode;
+}
+
+/**
+ * The bridge for DATA calls. Returns null in demo mode so every data function
+ * takes its existing mock branch — one switch instead of a demo check in each.
+ *
+ * Settings deliberately do NOT go through this: they always use the real
+ * bridge, otherwise turning demo mode off again would be impossible, and the
+ * theme/base-URL preferences would silently stop persisting.
+ */
+const live = () => (demoMode ? null : bridge());
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -15,6 +40,9 @@ let mockSettings = {
   aiApiKey: true,
   slackWebhookUrl: false,
   aiProviderValue: "anthropic",
+  demoMode: false,
+  theme: "system",
+  githubApiBaseUrl: "",
 };
 
 const MOCK_COMMITS = [
@@ -146,7 +174,8 @@ const listeners = new Set();
 const emit = (payload) => listeners.forEach((cb) => cb(payload));
 
 export function onStatus(callback) {
-  if (bridge()) return bridge().onStatus(callback);
+  const b = live();
+  if (b) return b.onStatus(callback);
   listeners.add(callback);
   return () => listeners.delete(callback);
 }
@@ -172,7 +201,11 @@ export async function getSettings() {
 export async function setSetting(key, value) {
   if (bridge()) return bridge().setSetting(key, value);
   await delay(120);
+  // Preferences round-trip as their real values; secrets only as "is it set".
   if (key === "aiProvider") mockSettings.aiProviderValue = value;
+  else if (key === "theme") mockSettings.theme = value || "system";
+  else if (key === "githubApiBaseUrl") mockSettings.githubApiBaseUrl = value || "";
+  else if (key === "demoMode") mockSettings.demoMode = Boolean(value);
   else mockSettings[key] = Boolean(value);
   return true;
 }
@@ -180,13 +213,13 @@ export async function setSetting(key, value) {
 /* ----------------------------------- repo ---------------------------------- */
 
 export async function getRepoDefaults({ repo }) {
-  if (bridge()) return bridge().getRepoDefaults({ repo });
+  if (live()) return live().getRepoDefaults({ repo });
   await delay(250);
   return { defaultBranch: "main", latestTag: repo.includes("cli") ? null : "v1.2.0" };
 }
 
 export async function listCommits({ repo, branch, page = 1 }) {
-  if (bridge()) return bridge().listCommits({ repo, branch, page });
+  if (live()) return live().listCommits({ repo, branch, page });
   await delay(400);
   const perPage = 8;
   const start = (page - 1) * perPage;
@@ -197,7 +230,7 @@ export async function listCommits({ repo, branch, page = 1 }) {
 /* --------------------------------- changes --------------------------------- */
 
 export async function fetchChanges({ repo, fromRef, toRef, detailed, force }) {
-  if (bridge()) return bridge().fetchChanges({ repo, fromRef, toRef, detailed, force });
+  if (live()) return live().fetchChanges({ repo, fromRef, toRef, detailed, force });
   await simulateRun({ detailed });
 
   if (fromRef === toRef) return { changes: [], empty: true };
@@ -319,8 +352,8 @@ export async function publish({
   version,
   detailed,
 }) {
-  if (bridge())
-    return bridge().publish({
+  if (live())
+    return live().publish({
       repo,
       range,
       changes,
@@ -376,13 +409,13 @@ export async function publish({
 // In browser preview there is no bridge, so we fall back to returning the raw
 // markdown — enough to exercise the UI without duplicating the converters.
 export async function exportNotes({ markdown, format, title }) {
-  if (bridge()) return bridge().exportNotes({ markdown, format, title });
+  if (live()) return live().exportNotes({ markdown, format, title });
   await delay(120);
   return { content: markdown, format, extension: format === "html" ? "html" : "txt" };
 }
 
 export async function exportSave({ markdown, format, title, defaultName }) {
-  if (bridge()) return bridge().exportSave({ markdown, format, title, defaultName });
+  if (live()) return live().exportSave({ markdown, format, title, defaultName });
   await delay(200);
   // No native save dialog in a browser — report the cancel path instead of
   // pretending a file was written.
@@ -392,20 +425,20 @@ export async function exportSave({ markdown, format, title, defaultName }) {
 /* --------------------------------- history --------------------------------- */
 
 export async function getHistory() {
-  if (bridge()) return bridge().getHistory();
+  if (live()) return live().getHistory();
   await delay(200);
   return [...mockHistory];
 }
 
 export async function deleteHistoryEntry(id) {
-  if (bridge()) return bridge().deleteHistoryEntry(id);
+  if (live()) return live().deleteHistoryEntry(id);
   await delay(150);
   mockHistory = mockHistory.filter((h) => h.id !== id);
   return [...mockHistory];
 }
 
 export async function clearHistory() {
-  if (bridge()) return bridge().clearHistory();
+  if (live()) return live().clearHistory();
   await delay(150);
   mockHistory = [];
   return [];

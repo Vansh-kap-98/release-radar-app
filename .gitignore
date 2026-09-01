@@ -1,4 +1,16 @@
 node_modules
 
+# Renderer build output — regenerate with `npm run build:renderer`.
+# Electron loads dist/ at runtime in production, and electron-builder
+# bundles it, but it is derived from src/ and does not belong in git.
+dist
+
+# electron-builder output (installers, unpacked app)
+release
+
+# Local environment overrides
+.env
+.env.local
+
 # Personal notes — not part of the project
 LINKEDIN_POSTS.md

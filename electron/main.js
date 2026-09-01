@@ -13,6 +13,10 @@ const { listHistory, addHistoryEntry, deleteHistoryEntry, clearHistory } = requi
 
 const isDev = process.env.NODE_ENV === "development";
 
+// GitHub Enterprise Server support. Blank/unset resolves to api.github.com
+// inside core/, so reading it here changes nothing for existing users.
+const githubApiBaseUrl = () => getSecret("githubApiBaseUrl") || "";
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 900,
@@ -59,8 +63,10 @@ ipcMain.handle("settings:set", (_event, { key, value }) => {
 // naturally bypass the cache without needing explicit invalidation.
 const classificationCache = new Map();
 
-function cacheKey({ repo, fromRef, toRef, detailed }) {
-  return JSON.stringify([repo, fromRef, toRef, Boolean(detailed)]);
+// The GitHub host is part of the key: the same owner/name can exist on
+// github.com and on an enterprise appliance with entirely different commits.
+function cacheKey({ repo, fromRef, toRef, detailed, apiBaseUrl }) {
+  return JSON.stringify([repo, fromRef, toRef, Boolean(detailed), apiBaseUrl || ""]);
 }
 
 // Lets the renderer show which phase is running rather than one generic spinner.
@@ -72,7 +78,8 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
   const githubToken = getSecret("githubToken");
   if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
 
-  const key = cacheKey({ repo, fromRef, toRef, detailed });
+  const apiBaseUrl = githubApiBaseUrl();
+  const key = cacheKey({ repo, fromRef, toRef, detailed, apiBaseUrl });
   // "Regenerate" from the History tab passes force, so it re-runs the pipeline
   // rather than handing back the cached classification it's trying to redo.
   if (force) classificationCache.delete(key);
@@ -83,7 +90,7 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
   try {
     sendStatus(event, { phase: "github" });
     const { commits, fileContext, empty, totalCommits, commitsTruncated } =
-      await fetchChangeRange({ repo, fromRef, toRef, githubToken });
+      await fetchChangeRange({ repo, fromRef, toRef, githubToken, apiBaseUrl });
     if (empty) return { changes: [], empty: true };
 
     const aiProvider = getSecret("aiProvider") || "anthropic";
@@ -197,7 +204,7 @@ ipcMain.handle("release-radar:history-clear", () => {
 ipcMain.handle("release-radar:list-commits", async (_event, { repo, branch, page }) => {
   const githubToken = getSecret("githubToken");
   if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
-  return listCommits({ repo, branch, page, githubToken });
+  return listCommits({ repo, branch, page, githubToken, apiBaseUrl: githubApiBaseUrl() });
 });
 
 // --- Feature 2: auto-detect latest release / default branch ---
@@ -205,7 +212,7 @@ ipcMain.handle("release-radar:list-commits", async (_event, { repo, branch, page
 ipcMain.handle("release-radar:repo-defaults", async (_event, { repo }) => {
   const githubToken = getSecret("githubToken");
   if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
-  return getRepoDefaults({ repo, githubToken });
+  return getRepoDefaults({ repo, githubToken, apiBaseUrl: githubApiBaseUrl() });
 });
 
 // --- Step 2: format + optionally publish ---
@@ -245,7 +252,7 @@ ipcMain.handle("release-radar:publish", async (event, { repo, range, changes, ma
   if (publishTarget === "github-release") {
     const githubToken = getSecret("githubToken");
     if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
-    const url = await publishGithubRelease({ repo, range, markdown, githubToken, version });
+    const url = await publishGithubRelease({ repo, range, markdown, githubToken, version, apiBaseUrl: githubApiBaseUrl() });
     return { markdown, published: true, publishedUrl: url };
   }
 
@@ -259,7 +266,7 @@ ipcMain.handle("release-radar:publish", async (event, { repo, range, changes, ma
   if (publishTarget === "pull-request") {
     const githubToken = getSecret("githubToken");
     if (!githubToken) throw new Error("Add a GitHub token in Settings first.");
-    const url = await openChangelogPullRequest({ repo, range, markdown, version, githubToken });
+    const url = await openChangelogPullRequest({ repo, range, markdown, version, githubToken, apiBaseUrl: githubApiBaseUrl() });
     return { markdown, published: true, publishedUrl: url };
   }
 

@@ -4,14 +4,19 @@
   "private": true,
   "description": "Turn a GitHub commit range into a categorized, publish-ready changelog.",
   "main": "electron/main.js",
+  "bin": {
+    "release-radar": "cli.js"
+  },
   "author": "Vansh Kapoor",
+  "license": "MIT",
   "scripts": {
     "dev:renderer": "vite",
     "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "build:renderer": "vite build",
     "build": "npm run build:renderer && electron-builder",
-    "test": "node test/run-all.js"
+    "test": "node test/run-all.js",
+    "cli": "node cli.js"
   },
   "dependencies": {
     "electron-store": "^8.2.0"

@@ -5,7 +5,7 @@
 // runners. Anything needing Electron (encrypted key storage, IPC, windows)
 // lives in ../electron and never leaks in here.
 
-const { fetchChangeRange, listCommits, getRepoDefaults, listTags, findPreviousTag, summarizeFiles, truncatePatch } = require("./github");
+const { fetchChangeRange, listCommits, getRepoDefaults, listTags, findPreviousTag, summarizeFiles, truncatePatch, apiBase, webBase, DEFAULT_API_BASE_URL } = require("./github");
 const { classifyChanges, formatReleaseNotes, callModel } = require("./ai");
 const { parseVersion, suggestBump, nextVersion } = require("./semver");
 const { markdownToHtml, markdownToPlainText } = require("./export");
@@ -20,6 +20,10 @@ module.exports = {
   findPreviousTag,
   summarizeFiles,
   truncatePatch,
+  // GitHub host (GitHub Enterprise Server support)
+  apiBase,
+  webBase,
+  DEFAULT_API_BASE_URL,
   // Version suggestion
   parseVersion,
   suggestBump,
