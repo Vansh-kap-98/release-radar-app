@@ -63,21 +63,6 @@ you'll need an Apple Developer account ($99/yr) and/or a Windows code
 signing certificate. You can ship unsigned first to validate demand,
 then sign once you have paying users.
 
-## Selling it
-Recommended path for v1:
-1. List it on **Gumroad** or **Lemon Squeezy** — both handle payment,
-   VAT/tax, and license key delivery for a flat fee per sale (no
-   monthly cost). Upload the built installers as the product file.
-2. Price as a one-time purchase. Since this is BYOK (bring your own AI
-   key), you have zero ongoing costs per user — price accordingly
-   lower than a subscription-based competitor.
-3. A simple landing page (even a single page with a demo GIF, the
-   price, and a buy button linking to Gumroad/Lemon Squeezy) is enough
-   for v1 — you don't need your own checkout flow.
-4. Optional, later: a lightweight license-key check on first launch
-   (Gumroad and Lemon Squeezy both have a "verify license" API) to
-   gate repeat piracy — not required to start selling.
-
 ## Security notes
 - API keys are encrypted at rest using the OS keychain via Electron's
   `safeStorage` (see `electron/lib/store.js`) — never written in plain

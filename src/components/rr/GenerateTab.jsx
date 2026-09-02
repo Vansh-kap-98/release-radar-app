@@ -348,7 +348,7 @@ export default function GenerateTab({ onSaved, prefill }) {
     }
   };
 
-  // Feature 6a: local exports. Nothing leaves the machine, so these skip the
+  // Local exports. Nothing leaves the machine, so these skip the
   // confirm-before-publish step the remote targets go through.
   const runExport = async (format, { save } = {}) => {
     setExportError("");

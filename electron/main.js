@@ -260,7 +260,7 @@ ipcMain.handle("release-radar:fetch-changes", async (event, { repo, fromRef, toR
   }
 });
 
-// --- Feature 6a: export the changelog as HTML or plain text ---
+// --- Export the changelog as HTML or plain text ---
 //
 // These are local outputs, not publish targets: nothing leaves the machine, so
 // they deliberately skip the confirm-before-publish guardrail that the remote
@@ -304,7 +304,7 @@ ipcMain.handle("release-radar:export-save", async (event, { markdown, format, ti
   return { saved: true, path: filePath };
 });
 
-// --- Feature 8: local history of generated changelogs ---
+// --- Local history of generated changelogs ---
 
 ipcMain.handle("release-radar:history-list", () => listHistory());
 
@@ -318,7 +318,7 @@ ipcMain.handle("release-radar:history-clear", () => {
   return [];
 });
 
-// --- Feature 1: visual commit picker ---
+// --- Visual commit picker ---
 
 ipcMain.handle("release-radar:list-commits", async (_event, { repo, branch, page }) => {
   const githubToken = getSecret("githubToken");
@@ -326,7 +326,7 @@ ipcMain.handle("release-radar:list-commits", async (_event, { repo, branch, page
   return listCommits({ repo, branch, page, githubToken, apiBaseUrl: githubApiBaseUrl() });
 });
 
-// --- Feature 2: auto-detect latest release / default branch ---
+// --- Auto-detect latest release / default branch ---
 
 ipcMain.handle("release-radar:repo-defaults", async (_event, { repo }) => {
   const githubToken = getSecret("githubToken");
@@ -353,7 +353,7 @@ ipcMain.handle("release-radar:publish", async (event, { repo, range, changes, ma
     });
     sendStatus(event, { phase: "idle" });
 
-    // Feature 8: every generated changelog is saved locally, so closing the
+    // Every generated changelog is saved locally, so closing the
     // app no longer throws away work you already paid API calls for. Saved on
     // generation rather than on publish — most runs never get published.
     addHistoryEntry({ repo, range, markdown, detailed });

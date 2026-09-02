@@ -1,7 +1,9 @@
-// These two functions do what the two Lamatic LLM nodes used to do,
-// just calling the AI provider's API directly with the user's own key
-// (BYOK model). Supports Anthropic and OpenAI; add more providers by
-// adding another branch in callModel().
+// Classification and formatting. Calls the AI provider's API directly with
+// the user's own key (BYOK) — there is no server in between.
+//
+// Supports Anthropic, OpenAI, Groq and Google Gemini. To add another, add an
+// entry to PROVIDERS below describing how to shape its request and read its
+// response; retry and backoff are shared and need no per-provider work.
 
 const CLASSIFY_SYSTEM_PROMPT = `You are a changelog classification engine. You will receive a JSON array of commits.
 

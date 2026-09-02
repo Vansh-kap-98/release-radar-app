@@ -1,6 +1,7 @@
-// Same logic as the original Lamatic codeNode script, just as a plain
-// Node function now — no flow runtime involved. Electron ships with a
-// modern enough Node that global fetch() is available.
+// GitHub reads: commit ranges, commit lists, tags, and diff summarising.
+//
+// Plain Node using global fetch() with no dependencies, so the same code runs
+// unchanged in the desktop app, the GitHub Action and the CLI.
 
 function authHeaders(githubToken) {
   return {
@@ -252,7 +253,7 @@ async function fetchChangeRange({ repo, fromRef, toRef, githubToken, apiBaseUrl 
   };
 }
 
-// Feature 1: visual commit picker. Lists commits on a branch (paginated via
+// Visual commit picker. Lists commits on a branch (paginated via
 // GitHub's `page` query param), newest first — same order the UI shows them
 // in, so "more recent" comparisons can be done via array index.
 async function listCommits({ repo, branch, page = 1, githubToken, apiBaseUrl }) {
@@ -291,7 +292,7 @@ async function listCommits({ repo, branch, page = 1, githubToken, apiBaseUrl }) 
   return { commits, hasNextPage };
 }
 
-// Feature 2: auto-detect the default range. Latest release tag (if any) +
+// Auto-detect the default range. Latest release tag (if any) +
 // the repo's actual default branch (not a hardcoded "main").
 async function getRepoDefaults({ repo, githubToken, apiBaseUrl }) {
   assertValidRepo(repo);
@@ -323,7 +324,7 @@ async function getRepoDefaults({ repo, githubToken, apiBaseUrl }) {
   return { defaultBranch: repoData.default_branch, latestTag };
 }
 
-// Feature 5 (GitHub Action): CI has no UI to pick refs from, so it has to
+// GitHub Action support: CI has no UI to pick refs from, so it has to
 // derive "what changed since the last release" on its own.
 async function listTags({ repo, githubToken, perPage = 100, apiBaseUrl }) {
   assertValidRepo(repo);

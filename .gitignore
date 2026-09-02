@@ -11,6 +11,3 @@ release
 # Local environment overrides
 .env
 .env.local
-
-# Personal notes — not part of the project
-LINKEDIN_POSTS.md

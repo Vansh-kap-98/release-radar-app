@@ -1,4 +1,4 @@
-// Feature 6a: export the generated changelog as styled HTML (for pasting into
+// Export the generated changelog as styled HTML (for pasting into
 // a blog) or as plain text (for an email newsletter).
 //
 // Hand-rolled rather than using a markdown library: core/ must stay

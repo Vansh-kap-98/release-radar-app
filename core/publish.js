@@ -53,7 +53,7 @@ function sanitizeBranchSegment(text) {
   return cleaned || "update";
 }
 
-// Feature 3: write the changelog back as a PR instead of just showing
+// Write the changelog back as a PR instead of just showing
 // markdown in the app. Touches exactly one file, so this uses GitHub's
 // Contents API (create-or-update-file, which internally handles the
 // blob/commit for us) rather than driving the low-level Git Data API by
